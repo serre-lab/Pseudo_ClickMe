@@ -8,7 +8,7 @@ if __name__ == "__main__":
     # compare(data_size=10, batch_size=32)
     
     root_dir = "mnt/disks/pseudo-clickme/"
-    folders = ['Pseudo_ClickMe/train', 'Pseudo_ClickMe/val', 'ClickMe/train', 'ClickMe/val', 'ClickMe/test']
+    folders = ['Pseudo_ClickMe_v2/train', 'Pseudo_ClickMe_v2/val', 'ClickMe/train', 'ClickMe/val', 'ClickMe/test']
     for folder in folders:
         print("Processing folder: " + folder)
         
