@@ -1,0 +1,96 @@
+import torch
+import numpy as np
+from scipy.stats import spearmanr
+
+from configs import DefaultConfigs
+
+class ProgressMeter(object):
+    def __init__(self, num_batches, meters, prefix=""):
+        self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
+        self.meters = meters
+        self.prefix = prefix
+
+    def display(self, batch):
+        entries = [self.prefix + self.batch_fmtstr.format(batch)]
+        entries += [str(meter) for meter in self.meters]
+        print('  '.join(entries))
+
+    def _get_batch_fmtstr(self, num_batches):
+        num_digits = len(str(num_batches // 1))
+        fmt = '{:' + str(num_digits) + 'd}'
+        return '[' + fmt + '/' + fmt.format(num_batches) + ']'
+
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+
+    def __init__(self, name, fmt=':f'):
+        self.name = name
+        self.fmt = fmt
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+    def __str__(self):
+        fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
+        return fmtstr.format(**self.__dict__)
+    
+def spearman_correlation(heatmaps_a, heatmaps_b):
+    """
+    Computes the Spearman correlation between two sets of heatmaps.
+
+    Parameters
+    ----------
+    heatmaps_a
+        First set of heatmaps.
+        Expected shape (N, W, H).
+    heatmaps_b
+        Second set of heatmaps.
+        Expected shape (N, W, H).
+
+    Returns
+    -------
+    spearman_correlations
+        Array of Spearman correlation score between the two sets of heatmaps.
+    """
+    assert heatmaps_a.shape == heatmaps_b.shape, "The two sets of heatmaps must" \
+                                                 "have the same shape."
+    assert len(heatmaps_a.shape) == 3, "The two sets of heatmaps must have shape (N, W, H)."
+
+    scores = []
+
+    try:
+        heatmaps_a = heatmaps_a.numpy()
+        heatmaps_b = heatmaps_b.numpy()
+    except:
+        heatmaps_a = heatmaps_a.cpu().numpy()
+        heatmaps_b = heatmaps_b.cpu().numpy()
+
+    for ha, hb in zip(heatmaps_a, heatmaps_b):
+        rho, _ = spearmanr(ha.flatten(), hb.flatten())
+        scores.append(rho)
+
+    return np.array(scores)
+
+def compute_human_alignment(predicted_heatmaps, clickme_heatmaps):
+    HUMAN_SPEARMAN_CEILING = 0.65753
+
+    if len(clickme_heatmaps.shape) == 4:
+        clickme_heatmaps = clickme_heatmaps[:, 0, :, :]
+    if len(predicted_heatmaps.shape) == 4:
+        predicted_heatmaps = predicted_heatmaps[:, 0, :, :]
+
+    scores = spearman_correlation(predicted_heatmaps, clickme_heatmaps)
+    human_alignment = np.mean(scores) / HUMAN_SPEARMAN_CEILING
+
+    return human_alignment
+
