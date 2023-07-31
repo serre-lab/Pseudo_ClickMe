@@ -36,18 +36,27 @@ except ImportError:
     
 global best_acc
 config = DefaultConfigs()
-    
-wandb.init(
-    project="pseudo-clickme",  # set the wandb project where this run will be logged
-    
-    config={  # track hyperparameters and run metadata
-        "learning_rate": 0.02,
-        "architecture": config.model_name,
-        "dataset": "ImageNet",
-        "epochs": config.epochs,
-        "mode": config.mode,
-    }
-)
+
+# set running device
+if config.tpu == True:
+    device = xm.xla_device()
+elif torch.cuda.is_available():
+    device = 'cuda:{}'.format(config.gpu_id) 
+else: 
+    device = "cpu"
+
+if config.wandb:
+    wandb.init(
+        project="pseudo-clickme",  # set the wandb project where this run will be logged
+        
+        config={  # track hyperparameters and run metadata
+            "learning_rate": config.lr,
+            "architecture": config.model_name,
+            "dataset": "ImageNet",
+            "epochs": config.epochs,
+            "mode": config.mode,
+        }
+    )
 
 def broadcast_xla_master_model_param(model, args):
     """
@@ -58,7 +67,6 @@ def broadcast_xla_master_model_param(model, args):
     parameters_and_buffers = []
     is_master = xm.is_master_ordinal(local=False)
     for p in chain(model.parameters(), model.buffers()):
-        
         scale = 1 if is_master else 0
         scale = torch.tensor(scale, dtype=p.data.dtype, device=p.data.device)
         p.data.mul_(scale)
@@ -73,7 +81,7 @@ def _xla_logging(logger, value, batch_size, var_name=None):
     val = value.item()
     logger.update(val, batch_size)
     
-    if var_name != None:
+    if config.wandb and var_name != None:
         wandb.log({var_name: val})
 
 def train(train_loader, model, criterion, optimizer, epoch):
@@ -232,15 +240,6 @@ def save_checkpoint(state, is_best_acc):
 
 def main():
     best_acc = 0
-    
-    # set running device
-    if config.tpu == True:
-        device = xm.xla_device()
-        broadcast_xla_master_model_param(model, None)
-    elif torch.cuda.is_available():
-        device = 'cuda:{}'.format(config.gpu_id) 
-    else: 
-        device = "cpu"
         
     torch.set_default_tensor_type('torch.FloatTensor')
 
@@ -255,6 +254,9 @@ def main():
         model = timm.create_model(config.model_name, num_classes=1000, pretrained=False)
 
     model.to(device)
+    if config.tpu:
+        broadcast_xla_master_model_param(model, None)
+
     criterion = nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.SGD(
         model.parameters(), 
@@ -286,7 +288,7 @@ def main():
     # Dataset Initialization
     if config.evaluate:
         test_file_paths = glob.glob(os.path.join(config.data_dir, config.test_clickme_paths))
-        test_dataset = ClickMe(test_file_paths)
+        test_dataset = ClickMe(test_file_paths, is_training=False)
         test_loader = DataLoader(
             test_dataset, 
             batch_size=config.batch_size, 
@@ -307,8 +309,8 @@ def main():
             train_file_paths += glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
             val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_clickme_paths))
             
-        train_dataset = ClickMe(train_file_paths*2, is_training=True)
-        val_dataset = ClickMe(val_file_paths*4, is_training=False)
+        train_dataset = ClickMe(train_file_paths, is_training=True)
+        val_dataset = ClickMe(val_file_paths, is_training=False)
 
         train_loader = DataLoader(
             train_dataset, 
@@ -358,4 +360,5 @@ if __name__ == '__main__':
     else:
         main()
         
-    wandb.finish()  # [optional] finish the wandb run, necessary in notebooks
+    if config.wandb:
+        wandb.finish()  # [optional] finish the wandb run, necessary in notebooks

@@ -34,3 +34,4 @@ class DefaultConfigs(object):
     pretrained = True
     resume = False
     tpu = False
+    wandb = False
