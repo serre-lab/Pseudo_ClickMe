@@ -33,6 +33,21 @@ try:
     import torch_xla.utils.serialization as xser
 except ImportError:
     xm = xmp = pl = xu = None
+    
+global best_acc
+config = DefaultConfigs()
+    
+wandb.init(
+    project="pseudo-clickme",  # set the wandb project where this run will be logged
+    
+    config={  # track hyperparameters and run metadata
+        "learning_rate": 0.02,
+        "architecture": config.model_name,
+        "dataset": "ImageNet",
+        "epochs": config.epochs,
+        "mode": config.mode,
+    }
+)
 
 def broadcast_xla_master_model_param(model, args):
     """
@@ -53,9 +68,13 @@ def broadcast_xla_master_model_param(model, args):
     xm.mark_step()
     xm.rendezvous("broadcast_xla_master_model_param")
 
-def _xla_logging(logger, value, batch_size):
+def _xla_logging(logger, value, batch_size, var_name=None):
     assert torch.is_tensor(value), f"the value must be a tensor"
-    logger.update(value.item(), batch_size)
+    val = value.item()
+    logger.update(val, batch_size)
+    
+    if var_name != None:
+        wandb.log({var_name: val})
 
 def train(train_loader, model, criterion, optimizer, epoch):
     batch_time = AverageMeter('Time', ':6.3f')
@@ -89,9 +108,9 @@ def train(train_loader, model, criterion, optimizer, epoch):
             top1.update(acc1[0].item(), images.size(0))
             top5.update(acc5[0].item(), images.size(0))
         else:
-            xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0)))
-            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0)))
-            xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0)))
+            xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
+            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc"))
+            xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc"))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -125,6 +144,48 @@ def validate(val_loader, model, criterion):
     with torch.no_grad():
         end = time.time()
         for batch_id, (images, heatmaps, target) in enumerate(val_loader):
+            images, heatmaps, target = images.to(device, non_blocking=True), heatmaps.to(device, non_blocking=True), target.to(device, non_blocking=True)
+
+            # compute prediction and loss
+            output = model(images)
+            loss = criterion(output, target)
+
+            # measure accuracy and record loss
+            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            if config.tpu != True:
+                losses.update(loss.item(), images.size(0))
+                top1.update(acc1[0].item(), images.size(0))
+                top5.update(acc5[0].item(), images.size(0))
+            else:
+                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "val_loss"))
+                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc"))
+                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc"))
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+            if (batch_id + 1) % config.interval == 0:
+                progress.display(batch_id + 1)
+                
+    return top1.avg, losses.avg
+
+def test(test_loader, model, criterion):
+    batch_time = AverageMeter('Time', ':6.3f')
+    losses = AverageMeter('Loss', ':.2e')
+    top1 = AverageMeter('Acc@1', ':6.2f')
+    top5 = AverageMeter('Acc@5', ':6.2f')
+    progress = ProgressMeter(
+        len(test_loader),
+        [batch_time, losses, top1, top5],
+        prefix='Val: ')
+
+    # switch to evaluate mode
+    model.eval()
+
+    with torch.no_grad():
+        end = time.time()
+        for batch_id, (images, heatmaps, target) in enumerate(test_loader):
             images, heatmaps, target = images.to(device, non_blocking=True), heatmaps.to(device, non_blocking=True), target.to(device, non_blocking=True)
 
             # compute prediction and loss
@@ -232,7 +293,7 @@ def main():
             num_workers=config.num_workers, 
             pin_memory=True,
         )
-        validate(val_loader, model, criterion)
+        test(test_loader, model, criterion)
         return
     else:
         if config.mode == "imagenet":
@@ -290,11 +351,11 @@ def main():
         }, is_best_acc)
 
 if __name__ == '__main__':
-    global best_acc
-    config = DefaultConfigs()
     
     if config.tpu == True:
         tpu_cores_per_node = 1
         xmp.spawn(main(), args=(), nprocs=tpu_cores_per_node)
     else:
         main()
+        
+    wandb.finish()  # [optional] finish the wandb run, necessary in notebooks
