@@ -26,20 +26,73 @@ from metrics import accuracy
 from configs import DefaultConfigs
 from loss import harmonizer_loss, harmonization_eval
 
-best_acc = 0
-best_human_alignment = 0
+try:
+    import torch_xla.core.xla_model as xm
+    import torch_xla.distributed.xla_multiprocessing as xmp
+    import torch_xla.distributed.parallel_loader as pl
+    import torch_xla.utils.utils as xu
+    import torch_xla.utils.serialization as xser
+except ImportError:
+    xm = xmp = pl = xu = None
+    
+global best_acc, best_human_alignment
 config = DefaultConfigs()
-device = 'cuda:{}'.format(config.gpu_id) if torch.cuda.is_available() else "cpu"
+
+# set running device
+if config.tpu == True:
+    device = xm.xla_device()
+elif torch.cuda.is_available():
+    device = 'cuda:{}'.format(config.gpu_id) 
+else: 
+    device = "cpu"
+    
+if config.wandb:
+    wandb.init(
+        project="pseudo-clickme",  # set the wandb project where this run will be logged
+        config={                   # track hyperparameters and run metadata
+            "learning_rate": config.lr,
+            "architecture": config.model_name,
+            "dataset": "ImageNet",
+            "epochs": config.epochs,
+            "mode": config.mode,
+        }
+    )
+
+def broadcast_xla_master_model_param(model, args):
+    """
+    Broadcast the model parameters from master process to other processes;
+    Set all params in non-master devices to zero so that all_reduce is
+    equivalent to broadcasting parameters from master to other devices.
+    """
+    parameters_and_buffers = []
+    is_master = xm.is_master_ordinal(local=False)
+    for p in chain(model.parameters(), model.buffers()):
+        scale = 1 if is_master else 0
+        scale = torch.tensor(scale, dtype=p.data.dtype, device=p.data.device)
+        p.data.mul_(scale)
+        parameters_and_buffers.append(p.data)
+    xm.wait_device_ops()
+    xm.all_reduce(xm.REDUCE_SUM, parameters_and_buffers)
+    xm.mark_step()
+    xm.rendezvous("broadcast_xla_master_model_param")
+
+def _xla_logging(logger, value, batch_size, var_name=None):
+    # assert torch.is_tensor(value) or , f"the value must be a tensor"
+    val = value.item()
+    logger.update(val, batch_size)
+    
+    if config.wandb and var_name != None:
+        wandb.log({var_name: val})
 
 def train(train_loader, model, criterion, optimizer, epoch):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
-    losses = AverageMeter('Loss', ':.2e')
+    cce_losses = AverageMeter('CCE_Loss', ':.2e')
+    hmn_losses = AverageMeter('HMN_Loss', ':.2e')
     top1 = AverageMeter('Acc@1', ':6.2f')
-    top5 = AverageMeter('Acc@5', ':6.2f')
     progress = ProgressMeter(
         len(train_loader),
-        [batch_time, data_time, losses, top1, top5],
+        [batch_time, data_time, cce_losses, hmn_losses, top1],
         prefix="Train: [{}]".format(epoch+1))
 
     # switch to train mode
@@ -60,13 +113,20 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
         # measure accuracy and update loss
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
-        losses.update(cce_loss.item(), images.size(0))
-        top1.update(acc1[0].item(), images.size(0))
-        top5.update(acc5[0].item(), images.size(0))
+        if config.tpu != True:
+            hmn_losses.update(harmonization_loss.item(), images.size(0))
+            cce_losses.update(cce_loss.item(), images.size(0))
+            top1.update(acc1[0].item(), images.size(0))
+        else:
+            xm.add_step_closure(_xla_logging, args=(hmn_losses, harmonization_loss, images.size(0), "harmonization_loss"))
+            xm.add_step_closure(_xla_logging, args=(cce_losses, cce_loss, images.size(0), "train_cce_loss"))
+            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc"))
 
         # update
         optimizer.zero_grad()
         harmonization_loss.backward()
+        if config.tpu:
+            xm.reduce_gradients(optimizer) # Reduce gradients
         optimizer.step()
 
         # measure elapsed time
@@ -76,17 +136,16 @@ def train(train_loader, model, criterion, optimizer, epoch):
         if (batch_id + 1) % config.interval == 0:
             progress.display(batch_id + 1)
 
-    return top1.avg, losses.avg
+    return top1.avg, hmn_losses.avg
 
 def validate(val_loader, model, criterion):
     batch_time = AverageMeter('Time', ':6.3f')
-    losses = AverageMeter('Loss', ':.2e')
+    losses = AverageMeter('CCE-Loss', ':.2e')
     top1 = AverageMeter('Acc@1', ':6.2f')
-    top5 = AverageMeter('Acc@5', ':6.2f')
     alignment = AverageMeter('Alignment', ':6.3f')
     progress = ProgressMeter(
         len(val_loader),
-        [batch_time, losses, top1, top5, alignment],
+        [batch_time, losses, top1, alignment],
         prefix='Val: ')
 
     # switch to evaluate mode
@@ -95,38 +154,58 @@ def validate(val_loader, model, criterion):
     end = time.time()
     for batch_id, (images, heatmaps, target) in enumerate(val_loader):
         images, heatmaps, target = images.to(device, non_blocking=True), heatmaps.to(device, non_blocking=True), target.to(device, non_blocking=True)
-
-        '''
-        # compute prediction and loss
-        images.requires_grad = True
-        output = model(images)
-
-        # measure accuracy and record loss
-        cce_loss = criterion(output, target)
-        acc1, acc5 = accuracy(output, target, topk=(1, 5))
-        losses.update(cce_loss.item(), images.size(0))
-        top1.update(acc1[0], images.size(0))
-        top5.update(acc5[0], images.size(0))
         
-        # compute saliency maps and measure human alignment
-        correct_class_scores = output.gather(1, target.view(-1, 1)).squeeze()
-        saliency_loss = torch.sum(correct_class_scores)
-        saliency_loss.backward(retain_graph=True) # compute the gradients while retain the graph
-        grads = torch.abs(images.grad)
-        saliency_maps, _ = torch.max(grads, dim=1, keepdim=True) # saliency map (N, C, H, W) -> (N, 1, H, W)
-        human_alignment = compute_human_alignment(saliency_maps, heatmaps)
-        alignment.update(human_alignment, images.size(0))
-        images.grad.zero_() # reset the gradients
-        '''
+        # evaluation
+        output, cce_loss, alignment_score = harmonization_eval(model, images, target, heatmaps, criterion)
+        acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        
+        if config.tpu != True:
+            losses.update(cce_loss.item(), images.size(0))
+            alignment.update(alignment_score.item(), images.size(0))
+            top1.update(acc1[0].item(), images.size(0))
+        else:
+            xm.add_step_closure(_xla_logging, args=(losses, cce_loss, images.size(0), "val_cce_loss"))
+            xm.add_step_closure(_xla_logging, args=(alignment, alignment_score, images.size(0), "alignment"))
+            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc"))
+            
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+        if (batch_id + 1) % config.interval == 0:
+            progress.display(batch_id + 1)
+
+    return top1.avg, losses.avg, alignment.avg
+
+def test(test_loader, model, criterion):
+    batch_time = AverageMeter('Time', ':6.3f')
+    losses = AverageMeter('CCE-Loss', ':.2e')
+    top1 = AverageMeter('Acc@1', ':6.2f')
+    alignment = AverageMeter('Alignment', ':6.3f')
+    progress = ProgressMeter(
+        len(test_loader),
+        [batch_time, losses, top1, alignment],
+        prefix='Val: ')
+
+    # switch to evaluate mode
+    model.eval()
+
+    end = time.time()
+    for batch_id, (images, heatmaps, target) in enumerate(test_loader):
+        images, heatmaps, target = images.to(device, non_blocking=True), heatmaps.to(device, non_blocking=True), target.to(device, non_blocking=True)
         
         output, cce_loss, alignment_score = harmonization_eval(model, images, target, heatmaps, criterion)
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
         
-        losses.update(cce_loss.item(), images.size(0))
-        top1.update(acc1[0].item(), images.size(0))
-        top5.update(acc5[0].item(), images.size(0))
-        alignment.update(alignment_score, images.size(0))
-
+        if config.tpu != True:
+            losses.update(cce_loss.item(), images.size(0))
+            alignment.update(alignment_score.item(), images.size(0))
+            top1.update(acc1[0].item(), images.size(0))
+        else:
+            xm.add_step_closure(_xla_logging, args=(losses, cce_loss, images.size(0)))
+            xm.add_step_closure(_xla_logging, args=(alignment, alignment_score, images.size(0)))
+            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0)))
+            
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
@@ -137,12 +216,22 @@ def validate(val_loader, model, criterion):
     return top1.avg, losses.avg, alignment.avg
 
 def save_checkpoint(state, is_best_acc, is_best_alignment):
+    if not os.path.exists(config.weights):
+        os.mkdir(config.best_models) 
+    
+    if not os.path.exists(config.best_models):
+        os.mkdir(config.best_models) 
+            
     save_dir = config.weights + config.model_name 
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
     filename = os.path.join(save_dir, "_checkpoint.pth.tar")
     
-    torch.save(state, filename)
+    if config.tpu == True:
+        xser.save(state, filename)
+    else: 
+        torch.save(state, filename)
+        
     if is_best_acc:
         save_dir = config.best_models + config.model_name
         if not os.path.exists(save_dir):
@@ -158,8 +247,10 @@ def save_checkpoint(state, is_best_acc, is_best_alignment):
         shutil.copyfile(filename, message)
 
 def main():
-    global best_acc
-    global best_human_alignment
+    best_acc = 0
+    best_human_alignment = 0
+    
+    torch.set_default_tensor_type('torch.FloatTensor')
 
     # Model Configurations
     if config.pretrained:
@@ -172,19 +263,18 @@ def main():
         model = timm.create_model(config.model_name, num_classes=1000, pretrained=False)
 
     model.to(device)
+    if config.tpu:
+        broadcast_xla_master_model_param(model, None)
+
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1).to(device)
-    # optimizer = torch.optim.SGD(
-    #     model.parameters(), 
-    #     lr = config.lr,
-    #     momentum = config.momentum,
-    #     weight_decay = config.weight_decay)
     optimizer = torch.optim.Adam(
         model.parameters(), 
         lr = config.lr,
         weight_decay = config.weight_decay)
     scheduler = StepLR(optimizer, step_size=config.step_size, gamma=config.gamma)
 
-    cudnn.benchmark = True
+    if "cuda" in device:
+        cudnn.benchmark = True
 
     # Continue training
     if config.resume:
@@ -204,14 +294,14 @@ def main():
     # Dataset Initialization
     if config.evaluate:
         test_file_paths = glob.glob(os.path.join(config.data_dir, config.test_clickme_paths))
-        test_dataset = ClickMe(test_file_paths)
+        test_dataset = ClickMe(test_file_paths, is_training=False)
         test_loader = DataLoader(
             test_dataset, 
             batch_size=config.batch_size, 
             num_workers=config.num_workers, 
             pin_memory=True,
         )
-        validate(val_loader, model, criterion)
+        validate(test_loader, model, criterion)
         return
     else:
         assert config.mode in ["imagenet", "pseudo", "mix"], f"Please check the data paths!"
@@ -274,4 +364,12 @@ def main():
         }, is_best_acc, is_best_alignment)
 
 if __name__ == '__main__':
-    main()
+    
+    if config.tpu == True:
+        tpu_cores_per_node = 1
+        xmp.spawn(main(), args=(), nprocs=tpu_cores_per_node)
+    else:
+        main()
+        
+    if config.wandb:
+        wandb.finish()  # [optional] finish the wandb run, necessary in notebooks

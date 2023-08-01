@@ -221,6 +221,12 @@ def test(test_loader, model, criterion):
     return top1.avg, losses.avg
 
 def save_checkpoint(state, is_best_acc):
+    if not os.path.exists(config.weights):
+        os.mkdir(config.best_models) 
+    
+    if not os.path.exists(config.best_models):
+        os.mkdir(config.best_models) 
+        
     save_dir = config.weights + config.model_name 
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)

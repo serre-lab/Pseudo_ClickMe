@@ -65,8 +65,8 @@ def pyramidal_mse(true_heatmaps, predicted_heatmaps, nb_levels=5):
     pyramid_y = pyramidal_representation(true_heatmaps, nb_levels)
     pyramid_y_pred = pyramidal_representation(predicted_heatmaps, nb_levels)
     
-    for i in range(nb_levels):
-        print(mse(pyramid_y[i], pyramid_y_pred[i]))
+    # for i in range(nb_levels):
+    #     print(mse(pyramid_y[i], pyramid_y_pred[i]))
 
     loss = torch.mean(torch.stack(
         [mse(pyramid_y[i], pyramid_y_pred[i]) for i in range(nb_levels)]))
@@ -94,14 +94,17 @@ def harmonizer_loss(model, images, labels, clickme_maps,
 
     model.train()
        
-    # compute prediction and loss
+    # compute prediction
     images.requires_grad = True
     output = model(images)
-    correct_class_scores = logits.gather(1, labels.view(-1, 1)).squeeze()
-    saliency_loss = torch.sum(correct_class_scores) # loss to compute saliency map
+
+    # get correct class scores
+    correct_class_scores = output.gather(1, labels.view(-1, 1)).squeeze()
+    device = images.device
+    ones_tensor = torch.ones(correct_class_scores.shape).to(device) # scores is a tensor here, need to supply initial gradients of same tensor shape as scores.
+    correct_class_scores.backward(ones_tensor, retain_graph=True) # compute the gradients while retain the graph
     
     # obtain saliency map
-    saliency_loss.backward(retain_graph=True) # compute the gradients while retaining the graph
     grads = torch.abs(images.grad)
     saliency_maps, _ = torch.max(grads, dim=1, keepdim=True) # (N, C, H, W) -> (N, 1, H, W)
     images.grad.zero_() # reset the gradients
@@ -150,13 +153,18 @@ def harmonization_eval(model, images, labels, clickme_maps, criterion):
     output = model(images)
     cce_loss = criterion(output, labels)
     
-    # compute saliency maps and measure human alignment
+    # get correct class scores
     correct_class_scores = output.gather(1, labels.view(-1, 1)).squeeze()
-    saliency_loss = torch.sum(correct_class_scores)
-    saliency_loss.backward(retain_graph=True) # compute the gradients while retain the graph
+    device = images.device
+    ones_tensor = torch.ones(correct_class_scores.shape).to(device) # scores is a tensor here, need to supply initial gradients of same tensor shape as scores.
+    correct_class_scores.backward(ones_tensor, retain_graph=True) # compute the gradients while retain the graph
+    
+    # compute saliency maps
     grads = torch.abs(images.grad)
     saliency_maps, _ = torch.max(grads, dim=1, keepdim=True) # saliency map (N, C, H, W) -> (N, 1, H, W)
-    human_alignment = compute_human_alignment(saliency_maps, heatmaps)
+    
+    # measure human alignment
+    human_alignment = compute_human_alignment(saliency_maps, clickme_maps)
     images.grad.zero_() # reset the gradients
     
     return output, cce_loss, human_alignment
