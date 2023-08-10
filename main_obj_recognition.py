@@ -324,7 +324,7 @@ def main():
 
         print("Global Rank:", global_rank)
         sampler_rank = global_rank
-        num_training_steps_per_epoch = len(dataset_train) // args.batch_size // num_tasks
+        # num_training_steps_per_epoch = len(dataset_train) // args.batch_size // num_tasks
 
         train_sampler = DistributedSampler(
             train_dataset,

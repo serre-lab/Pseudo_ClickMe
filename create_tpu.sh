@@ -11,7 +11,7 @@ gcloud alpha compute tpus tpu-vm attach-disk harmonization-pseudo --disk=clickme
 sleep 3
 
 # ssh
-gcloud alpha compute tpus tpu-vm ssh harmonization-pseudo --zone=us-central1-a --worker=all --command="sudo mkdir /clickme-with-pseudo/
+gcloud alpha compute tpus tpu-vm ssh pinyuan_feng_brown_edu@harmonization-pseudo --zone=us-central1-a --worker=all --command="sudo mkdir /clickme-with-pseudo/
 sudo chmod 777 /clickme-with-pseudo/
 cd /clickme-with-pseudo/
 git clone https://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@github.com/serre-lab/Pseudo_ClickMe.git
