@@ -26,6 +26,8 @@ from utils import AverageMeter, ProgressMeter, compute_human_alignment
 from metrics import accuracy
 from configs import DefaultConfigs
 
+import utils
+
 try:
     import torch_xla.core.xla_model as xm
     import torch_xla.distributed.xla_multiprocessing as xmp
@@ -319,8 +321,8 @@ def main():
         train_dataset = ClickMe(train_file_paths, is_training=True)
         val_dataset = ClickMe(val_file_paths, is_training=False)
         
-        num_tasks = utils.get_world_size()
-        global_rank = utils.get_rank()
+        num_tasks = utils.get_world_size(config.tpu)
+        global_rank = utils.get_rank(config.tpu)
 
         print("Global Rank:", global_rank)
         sampler_rank = global_rank

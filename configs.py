@@ -2,14 +2,14 @@
 class DefaultConfigs(object):
 
     # String Parameters
-    data_dir = '/media/data_cifs/pfeng2/Pseudo_ClickMe/Dataset/test/'
+    data_dir = '/mnt/disks/clickme-with-pseudo/'
     train_pseudo_paths = 'PseudoClickMe/train/*.pth' 
     train_clickme_paths = 'ClickMe/train/*.pth'
     val_pseudo_paths = 'PseudoClickMe/val/*.pth'
     val_clickme_paths = 'ClickMe/val/*.pth' 
     test_clickme_paths = 'ClickMe/test/*.pth' 
     model_name = "resnet50"
-    weights = "../ckpt/"
+    weights = "/clickme-with-pseudo/ckpt/"
     best_models = weights + "best_models/"
     
     # mode = "pseudo" 
