@@ -5,6 +5,10 @@ sudo mkdir -p /mnt/disks/bucket
 sudo chmod -R 777 /mnt/disks/bucket
 gcsfuse -o allow_other --file-mode=777 --dir-mode=777 serrelab /mnt/disks/bucket
 # /mnt/disks/bucket/pseudo_clickme
+
+sudo mkdir /tmp/tpu_logs
+sudo chmod -R 777 /tmp/tpu_logs
+
 sudo pip3 install --upgrade pip
 sudo pip3 install timm==0.8.23.dev0 
 sudo pip3 install wandb==0.15.0
