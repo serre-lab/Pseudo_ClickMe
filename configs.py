@@ -19,9 +19,9 @@ class DefaultConfigs(object):
     # Numeric Parameters
     epochs = 5
     start_epoch = 0
-    batch_size = 32
+    batch_size = 128
     momentum = 0.9
-    lr = 0
+    lr = 0.1
     weight_decay = 1e-5
     interval = 10
     num_workers = 8
@@ -31,7 +31,7 @@ class DefaultConfigs(object):
 
     # Boolean Parameters
     evaluate = False # set resume to be True at the same time
-    pretrained = True
+    pretrained = False
     resume = False
-    tpu = False
+    tpu = True
     wandb = False

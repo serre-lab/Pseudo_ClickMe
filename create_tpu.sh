@@ -18,4 +18,6 @@ git clone https://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@github.com/serre-lab/
 cd Pseudo_ClickMe/
 sh install.sh"
 
+# gcloud compute tpus tpu-vm ssh --zone "us-central1-a" "pinyuan_feng_brown_edu@harmonization-pseudo" --project "beyond-dl-1503610372419" --worker=all
+# git rest --hard
 # gcloud compute tpus tpu-vm ssh --zone "us-central1-a" "pinyuan_feng_brown_edu@harmonization-pseudo" --project "beyond-dl-1503610372419" --worker=all --command="cd /clickme-with-pseudo/Pseudo_ClickMe/ && git pull"

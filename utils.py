@@ -105,21 +105,21 @@ def compute_human_alignment(predicted_heatmaps, clickme_heatmaps):
 def get_world_size(isXLA):
     if isXLA:
         return xm.xrt_world_size()
-    if not is_dist_avail_and_initialized():
+    if not is_dist_avail_and_initialized(isXLA):
         return 1
     return torch.distributed.get_world_size()
 
 def get_rank(isXLA):
     if isXLA:
         return xm.get_ordinal()
-    if not is_dist_avail_and_initialized():
+    if not is_dist_avail_and_initialized(isXLA):
         return 0
     return torch.distributed.get_rank()
 
 def is_main_process():
     return get_rank() == 0
 
-def is_dist_avail_and_initialized():
+def is_dist_avail_and_initialized(isXLA):
     if isXLA:
         raise Exception("This function should not be called in XLA")
     if not torch.distributed.is_available():
