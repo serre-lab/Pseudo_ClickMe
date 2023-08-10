@@ -275,7 +275,7 @@ def main():
         weight_decay = config.weight_decay)
     scheduler = StepLR(optimizer, step_size=config.step_size, gamma=config.gamma)
 
-    if "cuda" in device:
+    if device == "cuda":
         cudnn.benchmark = True
 
     # Continue training

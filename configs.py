@@ -9,7 +9,7 @@ class DefaultConfigs(object):
     val_clickme_paths = 'ClickMe/val/*.pth' 
     test_clickme_paths = 'ClickMe/test/*.pth' 
     model_name = "resnet50"
-    weights = "/clickme-with-pseudo/ckpt/"
+    weights = "/mnt/disks/bucket/pseudo_clickme" # "/clickme-with-pseudo/ckpt/"
     best_models = weights + "best_models/"
     
     # mode = "pseudo" 
