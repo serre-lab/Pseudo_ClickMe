@@ -16,6 +16,7 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Subset, DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
 import timm
 import wandb
@@ -125,6 +126,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         loss.backward()
         if config.tpu:
             xm.reduce_gradients(optimizer) # Reduce gradients
+            # xm.optimizer_step(optimizer, barrier=True)
         optimizer.step()
 
         # measure elapsed time
@@ -317,25 +319,50 @@ def main():
             
         train_dataset = ClickMe(train_file_paths, is_training=True)
         val_dataset = ClickMe(val_file_paths, is_training=False)
+        
+        if config.tpu:
+            train_sampler = DistributedSampler(
+                            train_dataset,
+                            num_replicas = xm.xrt_world_size(),
+                            rank = xm.get_ordinal(), 
+                            shuffle = True)
+
+            val_sampler = DistributedSampler(
+                val_dataset, 
+                num_replicas = xm.xrt_world_size(),
+                rank = xm.get_ordinal(), 
+                shuffle = False)
+        else:
+            train_sampler, val_sampler = None, None
 
         train_loader = DataLoader(
             train_dataset, 
-            batch_size=config.batch_size, 
-            num_workers=config.num_workers,
-            pin_memory=True,
-            shuffle=True
+            batch_size = config.batch_size, 
+            num_workers = config.num_workers,
+            pin_memory = True,
+            sampler = train_sampler,
+            drop_last = True
         )
         val_loader = DataLoader(
             val_dataset, 
-            batch_size=config.batch_size, 
-            num_workers=config.num_workers, 
-            pin_memory=True,
-            shuffle=False
+            batch_size = config.batch_size, 
+            num_workers = config.num_workers, 
+            pin_memory = True,
+            sampler = val_sampler,
+            drop_last = True
         )
+        
+        if config.tpu:
+            train_loader = pl.MpDeviceLoader(train_loader, device)
+            val_loader = pl.MpDeviceLoader(val_loader, device)
+            
 
     for epoch in range(config.start_epoch, config.epochs):
         print('Epoch: [%d | %d]' % (epoch + 1, config.epochs))
 
+        # para_loader_train = pl.ParallelLoader(train_loader, [device]).per_device_loader(device)
+        # para_loader_val = pl.ParallelLoader(val_loader, [device]).per_device_loader(device)
+        
         # train for one epoch
         train_acc, train_loss = train(train_loader, model, criterion, optimizer, epoch)
 
@@ -361,7 +388,7 @@ def main():
 if __name__ == '__main__':
     
     if config.tpu == True:
-        tpu_cores_per_node = 1
+        tpu_cores_per_node = 8
         xmp.spawn(main(), args=(), nprocs=tpu_cores_per_node)
     else:
         main()

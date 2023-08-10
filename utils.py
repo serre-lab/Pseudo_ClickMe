@@ -4,6 +4,14 @@ from scipy.stats import spearmanr
 
 from configs import DefaultConfigs
 
+try:
+    import torch_xla.core.xla_model as xm
+    import torch_xla.distributed.xla_multiprocessing as xmp
+    import torch_xla.distributed.parallel_loader as pl
+    import torch_xla.utils.utils as xu
+except ImportError:
+    xm = xmp = pl = xu = None
+
 class ProgressMeter(object):
     def __init__(self, num_batches, meters, prefix=""):
         self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
@@ -93,4 +101,30 @@ def compute_human_alignment(predicted_heatmaps, clickme_heatmaps):
     human_alignment = np.mean(scores) / HUMAN_SPEARMAN_CEILING
 
     return human_alignment
+
+def get_world_size(isXLA):
+    if isXLA:
+        return xm.xrt_world_size()
+    if not is_dist_avail_and_initialized():
+        return 1
+    return torch.distributed.get_world_size()
+
+def get_rank(isXLA):
+    if isXLA:
+        return xm.get_ordinal()
+    if not is_dist_avail_and_initialized():
+        return 0
+    return torch.distributed.get_rank()
+
+def is_main_process():
+    return get_rank() == 0
+
+def is_dist_avail_and_initialized():
+    if isXLA:
+        raise Exception("This function should not be called in XLA")
+    if not torch.distributed.is_available():
+        return False
+    if not torch.distributed.is_initialized():
+        return False
+    return True
 

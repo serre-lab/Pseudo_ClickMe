@@ -366,7 +366,7 @@ def main():
 if __name__ == '__main__':
     
     if config.tpu == True:
-        tpu_cores_per_node = 1
+        tpu_cores_per_node = 8
         xmp.spawn(main(), args=(), nprocs=tpu_cores_per_node)
     else:
         main()
