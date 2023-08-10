@@ -47,6 +47,7 @@ else:
     device = "cpu"
 
 if config.wandb:
+    wandb.login(key="486f67137c1b6905ac11b8caaaf6ecb276bfdf8e")
     wandb.init(
         project="pseudo-clickme",  # set the wandb project where this run will be logged
         
@@ -254,11 +255,9 @@ def main():
     # Model Configurations
     if config.pretrained:
         print("=> using pre-trained model '{}'".format(config.model_name))
-        # model = models.__dict__[config.model_name](pretrained=True)
         model = timm.create_model(config.model_name, num_classes=1000, pretrained=True)
     else:
         print("=> creating model '{}'".format(config.model_name))
-        # model = models.__dict__[config.model_name]()
         model = timm.create_model(config.model_name, num_classes=1000, pretrained=False)
 
     model.to(device)
@@ -320,20 +319,24 @@ def main():
         train_dataset = ClickMe(train_file_paths, is_training=True)
         val_dataset = ClickMe(val_file_paths, is_training=False)
         
-        if config.tpu:
-            train_sampler = DistributedSampler(
-                            train_dataset,
-                            num_replicas = xm.xrt_world_size(),
-                            rank = xm.get_ordinal(), 
-                            shuffle = True)
+        num_tasks = utils.get_world_size()
+        global_rank = utils.get_rank()
 
-            val_sampler = DistributedSampler(
-                val_dataset, 
-                num_replicas = xm.xrt_world_size(),
-                rank = xm.get_ordinal(), 
-                shuffle = False)
-        else:
-            train_sampler, val_sampler = None, None
+        print("Global Rank:", global_rank)
+        sampler_rank = global_rank
+        num_training_steps_per_epoch = len(dataset_train) // args.batch_size // num_tasks
+
+        train_sampler = DistributedSampler(
+            train_dataset,
+            num_replicas = num_tasks,
+            rank = sampler_rank, 
+            shuffle = True)
+
+        val_sampler = DistributedSampler(
+            val_dataset, 
+            num_replicas = num_tasks,
+            rank = sampler_rank, 
+            shuffle = False)
 
         train_loader = DataLoader(
             train_dataset, 

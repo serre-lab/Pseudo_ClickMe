@@ -9,12 +9,12 @@ class DefaultConfigs(object):
     val_clickme_paths = 'ClickMe/val/*.pth' 
     test_clickme_paths = 'ClickMe/test/*.pth' 
     model_name = "resnet50"
-    weights = "../Ckpt/"
+    weights = "../ckpt/"
     best_models = weights + "best_models/"
     
     # mode = "pseudo" 
-    mode = "mix"
-    # mode = "imagenet"
+    # mode = "mix"
+    mode = "imagenet"
 
     # Numeric Parameters
     epochs = 5
