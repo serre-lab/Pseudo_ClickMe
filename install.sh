@@ -16,5 +16,8 @@ sudo pip3 install wandb==0.15.0
 sleep 5
 python3 -m wandb login 486f67137c1b6905ac11b8caaaf6ecb276bfdf8e
 
-# export TPU_NAME=harmonization-pseudo
-# export XRT_TPU_CONFIG="localservice;0;localhost:51011"
+sudo cp -f /clickme-with-pseudo/Pseudo_ClickMe/xla_dist.py /usr/local/lib/python3.8/dist-packages/torch_xla/distributed/
+sudo cp -f /clickme-with-pseudo/Pseudo_ClickMe/cluster.py /usr/local/lib/python3.8/dist-packages/torch_xla/distributed/
+
+export TPU_NAME=harmonization-pseudo
+export XRT_TPU_CONFIG="localservice;0;localhost:51011"
