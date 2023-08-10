@@ -228,15 +228,15 @@ def test(test_loader, model, criterion):
 
 def save_checkpoint(state, is_best_acc):
     if not os.path.exists(config.weights):
-        os.mkdir(config.best_models) 
+        os.mkdir(config.best_models)  # "/mnt/disks/bucket/pseudo_clickme/"
     
     if not os.path.exists(config.best_models):
-        os.mkdir(config.best_models) 
+        os.mkdir(config.best_models)  # "/mnt/disks/bucket/pseudo_clickme/best_models/"
         
-    save_dir = config.weights + config.model_name 
+    save_dir = os.path.join(config.weights, config.model_name) # "/mnt/disks/bucket/pseudo_clickme/resnet50"
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
-    filename = os.path.join(save_dir, "_checkpoint.pth.tar")
+    filename = os.path.join(save_dir, "checkpoint_" + str(state['epoch']) + ".pth") # "/mnt/disks/bucket/pseudo_clickme/resnet50/checkpoint_#_.pth""
     
     if config.tpu == True:
         xser.save(state, filename)
@@ -244,10 +244,10 @@ def save_checkpoint(state, is_best_acc):
         torch.save(state, filename)
         
     if is_best_acc:
-        save_dir = config.best_models + config.model_name
+        save_dir = os.path.join(config.best_models, config.model_name) # "/mnt/disks/bucket/pseudo_clickme/best_models/resnet50"
         if not os.path.exists(save_dir):
             os.mkdir(save_dir)
-        message = os.path.join(save_dir, 'best_acc.pth.tar')
+        message = os.path.join(save_dir, 'best_acc.pth') # "/mnt/disks/bucket/pseudo_clickme/best_models/resnet50/best_acc.pth"
         shutil.copyfile(filename, message)
 
 def main():

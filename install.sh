@@ -23,4 +23,5 @@ export TPU_NAME=harmonization-pseudo
 export XRT_TPU_CONFIG="localservice;0;localhost:51011"
 export XLA_USE_BF16=1 && export PYTHONUNBUFFERED=1
 
+# python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py 
 # sudo python3 -m torch_xla.distributed.xla_dist --tpu=${TPU_NAME} --restart-tpuvm-pod-server --env XRT_MESH_CONNECT_WAIT=12000 --env XLA_USE_BF16=1 --env PYTHONUNBUFFERED=1 -- python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py
