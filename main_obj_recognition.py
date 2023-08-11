@@ -250,7 +250,7 @@ def save_checkpoint(state, is_best_acc):
         
     model_dir = os.path.join(config.weights, config.model_name) # "/mnt/disks/bucket/pseudo_clickme/resnet50"
     if not os.path.exists(model_dir): 
-        os.mkdir(save_dir)
+        os.mkdir(model_dir)
         
     save_dir = os.path.join(model_dir, state['mode']) # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/"
     if not os.path.exists(save_dir): 
