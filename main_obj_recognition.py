@@ -245,13 +245,16 @@ def save_checkpoint(state, is_best_acc):
         else: 
             torch.save(state, filename)
     
-    if not os.path.exists(config.weights): os.mkdir(config.best_models)  # "/mnt/disks/bucket/pseudo_clickme/"
+    if not os.path.exists(config.weights): 
+        os.mkdir(config.best_models)  # "/mnt/disks/bucket/pseudo_clickme/"
         
     model_dir = os.path.join(config.weights, config.model_name) # "/mnt/disks/bucket/pseudo_clickme/resnet50"
-    if not os.path.exists(model_dir): os.mkdir(save_dir)
+    if not os.path.exists(model_dir): 
+        os.mkdir(save_dir)
         
     save_dir = os.path.join(model_dir, state['mode']) # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/"
-    if not os.path.exists(save_dir): os.mkdir(save_dir)
+    if not os.path.exists(save_dir): 
+        os.mkdir(save_dir)
         
     filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
     save_model(config.tpu, state, filename)
