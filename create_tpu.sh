@@ -20,7 +20,7 @@ sh install.sh"
 
 gcloud compute tpus tpu-vm ssh --zone "us-central1-a" "pinyuan_feng_brown_edu@harmonization-pseudo" --project "beyond-dl-1503610372419" --worker=all
 
-# git rest --hard
+# git reset --hard
 # gcloud compute tpus tpu-vm ssh --zone "us-central1-a" "pinyuan_feng_brown_edu@harmonization-pseudo" --project "beyond-dl-1503610372419" --worker=all --command="cd /clickme-with-pseudo/Pseudo_ClickMe/ && git pull"
 
 # gcloud compute tpus tpu-vm ssh --zone "us-central1-a" "pinyuan_feng_brown_edu@harmonization-pseudo" --project "beyond-dl-1503610372419" --worker=all --command="sudo pkill -f python"

@@ -2,7 +2,7 @@
 class DefaultConfigs(object):
 
     # String Parameters
-    data_dir = '/mnt/disks/clickme-with-pseudo/'
+    data_dir = '/mnt/disks/clickme-with-pseudo/test'
     train_pseudo_paths = 'PseudoClickMe/train/*.pth' 
     train_clickme_paths = 'ClickMe/train/*.pth'
     val_pseudo_paths = 'PseudoClickMe/val/*.pth'
@@ -10,8 +10,7 @@ class DefaultConfigs(object):
     test_clickme_paths = 'ClickMe/test/*.pth' 
     model_name = "resnet50"
     weights = "/mnt/disks/bucket/pseudo_clickme/" # "/clickme-with-pseudo/ckpt/"
-    best_models = "/mnt/disks/bucket/pseudo_clickme/best_models/"
-    
+   
     # mode = "pseudo" 
     # mode = "mix"
     mode = "imagenet"
@@ -19,7 +18,7 @@ class DefaultConfigs(object):
     # Numeric Parameters
     epochs = 5
     start_epoch = 0
-    batch_size = 128
+    batch_size = 32
     momentum = 0.9
     lr = 0.1
     weight_decay = 1e-5
