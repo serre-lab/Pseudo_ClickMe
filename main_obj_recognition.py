@@ -19,6 +19,7 @@ import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Subset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
+import torch.distributed as dist
 
 import timm
 import wandb
@@ -135,6 +136,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         end = time.time()
         
         if (batch_id + 1) % config.interval == 0:
+            progress.synchronize_between_processes(config.tpu)
             progress.display(batch_id + 1)
             
     return top1.avg, losses.avg
@@ -177,6 +179,7 @@ def validate(val_loader, model, criterion):
             end = time.time()
 
             if (batch_id + 1) % config.interval == 0:
+                progress.synchronize_between_processes(config.tpu)
                 progress.display(batch_id + 1)
                 
     return top1.avg, losses.avg
@@ -219,6 +222,7 @@ def test(test_loader, model, criterion):
             end = time.time()
 
             if (batch_id + 1) % config.interval == 0:
+                progress.synchronize_between_processes(config.tpu)
                 progress.display(batch_id + 1)
                 
     return top1.avg, losses.avg
@@ -409,7 +413,8 @@ def main():
             'mode':config.mode
         }, is_best_acc)
         
-        gc.collect()
+        if epoch % 5 == 0:
+            gc.collect()
 
 if __name__ == '__main__':
     
@@ -421,3 +426,5 @@ if __name__ == '__main__':
         
     if config.wandb:
         wandb.finish()  # [optional] finish the wandb run, necessary in notebooks
+        
+    print("***** DONE! *****")

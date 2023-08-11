@@ -4,6 +4,8 @@ from scipy.stats import spearmanr
 
 from configs import DefaultConfigs
 
+import torch.distributed as dist
+
 try:
     import torch_xla.core.xla_model as xm
     import torch_xla.distributed.xla_multiprocessing as xmp
@@ -27,6 +29,10 @@ class ProgressMeter(object):
         num_digits = len(str(num_batches // 1))
         fmt = '{:' + str(num_digits) + 'd}'
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
+    
+    def synchronize_between_processes(self, isXLA):
+        for meter in self.meters.values():
+            meter.synchronize_between_processes(isXLA)
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -51,6 +57,23 @@ class AverageMeter(object):
     def __str__(self):
         fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
         return fmtstr.format(**self.__dict__)
+    
+    def synchronize_between_processes(self, isXLA):
+        if isXLA:
+            t = torch.tensor([self.count, self.total], device=xm.xla_device())
+            t = xm.all_reduce(xm.REDUCE_SUM, t).tolist()
+            self.count = int(t[0])
+            self.total = t[1]
+            return
+        if not is_dist_avail_and_initialized(isXLA):
+            return
+        t = torch.tensor([self.count, self.total], dtype=torch.float64, device='cuda')
+        dist.barrier()
+        dist.all_reduce(t)
+        t = t.tolist()
+        self.count = int(t[0])
+        self.total = t[1]
+        self.avg = self.sum / self.count
     
 def spearman_correlation(heatmaps_a, heatmaps_b):
     """
