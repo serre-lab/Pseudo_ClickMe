@@ -415,7 +415,7 @@ if __name__ == '__main__':
     
     if config.tpu == True:
         tpu_cores_per_node = 1
-        xmp.spawn(main, args=(), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
+        xmp.spawn(main, args=None, nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
     else:
         main()
         
