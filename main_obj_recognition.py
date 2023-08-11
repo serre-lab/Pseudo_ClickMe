@@ -4,8 +4,9 @@ import random
 import shutil
 import time
 import glob
-import warnings
 from itertools import chain
+import gc
+import warnings
 warnings.filterwarnings('ignore')
 
 import torch
@@ -39,15 +40,8 @@ except ImportError:
     xm = xmp = pl = xu = None
     
 global best_acc
+global device
 config = DefaultConfigs()
-
-# set running device
-if config.tpu == True:
-    device = xm.xla_device()
-elif torch.cuda.is_available():
-    device = 'cuda:{}'.format(config.gpu_id) 
-else: 
-    device = "cpu"
 
 if config.wandb:
     wandb.login(key="486f67137c1b6905ac11b8caaaf6ecb276bfdf8e")
@@ -82,7 +76,6 @@ def broadcast_xla_master_model_param(model, args):
     xm.rendezvous("broadcast_xla_master_model_param")
 
 def _xla_logging(logger, value, batch_size, var_name=None):
-    assert torch.is_tensor(value), f"the value must be a tensor"
     val = value.item()
     logger.update(val, batch_size)
     
@@ -128,10 +121,13 @@ def train(train_loader, model, criterion, optimizer, epoch):
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
-        if config.tpu:
-            xm.reduce_gradients(optimizer) # Reduce gradients
-            # xm.optimizer_step(optimizer, barrier=True)
-        optimizer.step()
+        # if config.tpu:
+        #     xm.reduce_gradients(optimizer) # Reduce gradients
+        # optimizer.step()
+        if config.tpu: 
+            xm.optimizer_step(optimizer) # # barrier=True is required on single-core training but can be dropped with multiple cores
+        else:
+            optimizer.step()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -241,7 +237,7 @@ def save_checkpoint(state, is_best_acc):
     
     def save_model(isXLA, state, filename):
         if isXLA:
-            xser.save(state, filename)
+            xm.save(state, filename, global_master=True) # save ckpt on master process
         else: 
             torch.save(state, filename)
     
@@ -265,6 +261,14 @@ def save_checkpoint(state, is_best_acc):
         
 
 def main():
+    # set running device
+    if config.tpu == True:
+        device = xm.xla_device()
+    elif torch.cuda.is_available():
+        device = 'cuda:{}'.format(config.gpu_id) 
+    else: 
+        device = "cpu"
+        
     best_acc = 0
         
     torch.set_default_tensor_type('torch.FloatTensor')
@@ -289,14 +293,13 @@ def main():
         weight_decay = config.weight_decay)
     scheduler = StepLR(optimizer, step_size=config.step_size, gamma=config.gamma)
 
-    if device == "cuda":
-        cudnn.benchmark = True
+    cudnn.benchmark = True
 
     # Continue training
     if config.resume:
         if os.path.isfile(config.resume):
             if config.tpu == True:
-                checkpoint = xser.load(os.path.join(config.weights, config.model_name, config.mode, 'best.pth.tar'))
+                checkpoint = xm.load(os.path.join(config.weights, config.model_name, config.mode, 'best.pth.tar'))
             else:
                 checkpoint = torch.load(os.path.join(config.weights, config.model_name, config.mode, 'best.pth.tar'))
             config.start_epoch = checkpoint['epoch']
@@ -321,68 +324,63 @@ def main():
         )
         test(test_loader, model, criterion)
         return
-    else:
-        if config.mode == "imagenet":
-            train_file_paths = glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
-            val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_pseudo_paths))
-        if config.mode == "pseudo":
-            train_file_paths = glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
-            val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_clickme_paths))
-        if config.mode == "mix":
-            train_file_paths = glob.glob(os.path.join(config.data_dir, config.train_clickme_paths)) 
-            train_file_paths += glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
-            val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_clickme_paths))
-            
-        train_dataset = ClickMe(train_file_paths, is_training=True)
-        val_dataset = ClickMe(val_file_paths, is_training=False)
+    
+    if config.mode == "imagenet":
+        train_file_paths = glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
+        val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_pseudo_paths))
+    if config.mode == "pseudo":
+        train_file_paths = glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
+        val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_clickme_paths))
+    if config.mode == "mix":
+        train_file_paths = glob.glob(os.path.join(config.data_dir, config.train_clickme_paths)) 
+        train_file_paths += glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
+        val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_clickme_paths))
         
-        num_tasks = utils.get_world_size(config.tpu)
-        global_rank = utils.get_rank(config.tpu)
+    train_dataset = ClickMe(train_file_paths, is_training=True)
+    val_dataset = ClickMe(val_file_paths, is_training=False)
+    
+    num_tasks = utils.get_world_size(config.tpu)
+    global_rank = utils.get_rank(config.tpu)
 
-        print("Global Rank:", global_rank)
-        sampler_rank = global_rank
-        # num_training_steps_per_epoch = len(dataset_train) // args.batch_size // num_tasks
+    print("Global Rank:", global_rank)
+    sampler_rank = global_rank
 
-        train_sampler = DistributedSampler(
-            train_dataset,
-            num_replicas = num_tasks,
-            rank = sampler_rank, 
-            shuffle = True)
+    train_sampler = DistributedSampler(
+        train_dataset,
+        num_replicas = num_tasks,
+        rank = sampler_rank, 
+        shuffle = True)
 
-        val_sampler = DistributedSampler(
-            val_dataset, 
-            num_replicas = num_tasks,
-            rank = sampler_rank, 
-            shuffle = False)
+    val_sampler = DistributedSampler(
+        val_dataset, 
+        num_replicas = num_tasks,
+        rank = sampler_rank, 
+        shuffle = False)
 
-        train_loader = DataLoader(
-            train_dataset, 
-            batch_size = config.batch_size, 
-            num_workers = config.num_workers,
-            pin_memory = True,
-            sampler = train_sampler,
-            drop_last = True
-        )
-        val_loader = DataLoader(
-            val_dataset, 
-            batch_size = config.batch_size, 
-            num_workers = config.num_workers, 
-            pin_memory = True,
-            sampler = val_sampler,
-            drop_last = True
-        )
-        
-        if config.tpu:
-            train_loader = pl.MpDeviceLoader(train_loader, device)
-            val_loader = pl.MpDeviceLoader(val_loader, device)
-            
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size = config.batch_size, 
+        num_workers = config.num_workers,
+        pin_memory = True,
+        sampler = train_sampler,
+        drop_last = True # DataParallel cores must run the same number of batches each, and only full batches are allowed.
+    )
+    val_loader = DataLoader(
+        val_dataset, 
+        batch_size = config.batch_size, 
+        num_workers = config.num_workers, 
+        pin_memory = True,
+        sampler = val_sampler,
+        drop_last = True
+    )
+    
+    if config.tpu:
+        train_loader = pl.MpDeviceLoader(train_loader, device)
+        val_loader = pl.MpDeviceLoader(val_loader, device)
 
     for epoch in range(config.start_epoch, config.epochs):
         print('Epoch: [%d | %d]' % (epoch + 1, config.epochs))
 
-        # para_loader_train = pl.ParallelLoader(train_loader, [device]).per_device_loader(device)
-        # para_loader_val = pl.ParallelLoader(val_loader, [device]).per_device_loader(device)
-        
         # train for one epoch
         train_acc, train_loss = train(train_loader, model, criterion, optimizer, epoch)
 
@@ -406,12 +404,14 @@ def main():
             'scheduler' : scheduler.state_dict(),
             'mode':config.mode
         }, is_best_acc)
+        
+        gc.collect()
 
 if __name__ == '__main__':
     
     if config.tpu == True:
         tpu_cores_per_node = 8
-        xmp.spawn(main(), args=(), nprocs=tpu_cores_per_node)
+        xmp.spawn(main(), args=(), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
     else:
         main()
         
