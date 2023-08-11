@@ -60,19 +60,19 @@ class AverageMeter(object):
     
     def synchronize_between_processes(self, isXLA):
         if isXLA:
-            t = torch.tensor([self.count, self.total], device=xm.xla_device())
+            t = torch.tensor([self.count, self.sum], device=xm.xla_device())
             t = xm.all_reduce(xm.REDUCE_SUM, t).tolist()
             self.count = int(t[0])
-            self.total = t[1]
+            self.sum = t[1]
             return
         if not is_dist_avail_and_initialized(isXLA):
             return
-        t = torch.tensor([self.count, self.total], dtype=torch.float64, device='cuda')
+        t = torch.tensor([self.count, self.sum], dtype=torch.float64, device='cuda')
         dist.barrier()
         dist.all_reduce(t)
         t = t.tolist()
         self.count = int(t[0])
-        self.total = t[1]
+        self.sum = t[1]
         self.avg = self.sum / self.count
     
 def spearman_correlation(heatmaps_a, heatmaps_b):
