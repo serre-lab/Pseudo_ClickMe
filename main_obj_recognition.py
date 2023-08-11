@@ -39,9 +39,10 @@ try:
 except ImportError:
     xm = xmp = pl = xu = None
     
-global best_acc
-global device
+best_acc = 0
+device = None
 config = DefaultConfigs()
+
 
 if config.wandb:
     wandb.login(key="486f67137c1b6905ac11b8caaaf6ecb276bfdf8e")
@@ -261,6 +262,9 @@ def save_checkpoint(state, is_best_acc):
         
 
 def main():
+    global device
+    global best_acc
+    
     # set running device
     if config.tpu == True:
         device = xm.xla_device()
@@ -268,7 +272,7 @@ def main():
         device = 'cuda:{}'.format(config.gpu_id) 
     else: 
         device = "cpu"
-        
+    
     best_acc = 0
         
     torch.set_default_tensor_type('torch.FloatTensor')
