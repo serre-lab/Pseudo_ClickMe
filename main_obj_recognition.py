@@ -395,19 +395,19 @@ def main():
         scheduler.step()
 
         # save model for best_acc model
-        # if epoch < config.epochs // 2: continue
-        # is_best_acc = val_acc > best_acc
-        # best_acc = max(val_acc, best_acc)
-        # save_checkpoint({
-        #     'epoch': epoch + 1,
-        #     "model_name": config.model_name,
-        #     'state_dict': model.state_dict(),
-        #     'acc': val_acc,
-        #     'best_acc': best_acc,
-        #     'optimizer': optimizer.state_dict(),
-        #     'scheduler' : scheduler.state_dict(),
-        #     'mode':config.mode
-        # }, is_best_acc)
+        if epoch < config.epochs // 2: continue
+        is_best_acc = val_acc > best_acc
+        best_acc = max(val_acc, best_acc)
+        save_checkpoint({
+            'epoch': epoch + 1,
+            "model_name": config.model_name,
+            'state_dict': model.state_dict(),
+            'acc': val_acc,
+            'best_acc': best_acc,
+            'optimizer': optimizer.state_dict(),
+            'scheduler' : scheduler.state_dict(),
+            'mode':config.mode
+        }, is_best_acc)
         
         gc.collect()
 
@@ -415,7 +415,7 @@ if __name__ == '__main__':
     
     if config.tpu == True:
         tpu_cores_per_node = 1
-        xmp.spawn(main(), args=(), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
+        xmp.spawn(main, args=(), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
     else:
         main()
         
