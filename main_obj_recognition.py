@@ -256,11 +256,11 @@ def save_checkpoint(state, is_best_acc):
     if not os.path.exists(save_dir): 
         os.mkdir(save_dir)
         
-    filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
+    filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth.tar") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
     save_model(config.tpu, state, filename)
   
     if is_best_acc:
-        best_filename = os.path.join(save_dir, 'best.pth') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
+        best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
         save_model(config.tpu, state, best_filename)
         
 
@@ -296,9 +296,9 @@ def main():
     if config.resume:
         if os.path.isfile(config.resume):
             if config.tpu == True:
-                checkpoint = xser.load(os.path.join(config.weights, config.model_name, config.mode, 'best.pth'))
+                checkpoint = xser.load(os.path.join(config.weights, config.model_name, config.mode, 'best.pth.tar'))
             else:
-                checkpoint = torch.load(os.path.join(config.weights, config.model_name, config.mode, 'best.pth'))
+                checkpoint = torch.load(os.path.join(config.weights, config.model_name, config.mode, 'best.pth.tar'))
             config.start_epoch = checkpoint['epoch']
             best_acc = checkpoint['best_acc']
             model.load_state_dict(checkpoint['state_dict'])
