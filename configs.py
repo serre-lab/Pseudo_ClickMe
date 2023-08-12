@@ -1,5 +1,4 @@
-
-class DefaultConfigs(object):
+class Configs(object):
 
     # String Parameters
     data_dir = '/mnt/disks/clickme-with-pseudo/test'
@@ -27,6 +26,7 @@ class DefaultConfigs(object):
     step_size = 30
     gamma = 0.1
     gpu_id = 1
+    ckpt_remain = 5
 
     # Boolean Parameters
     evaluate = False # set resume to be True at the same time

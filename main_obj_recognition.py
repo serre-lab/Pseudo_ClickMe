@@ -27,7 +27,7 @@ import wandb
 from dataset import ClickMe
 from utils import AverageMeter, ProgressMeter, compute_human_alignment
 from metrics import accuracy
-from configs import DefaultConfigs
+from configs import Configs as configs
 
 import utils
 
@@ -42,22 +42,6 @@ except ImportError:
     
 best_acc = 0
 device = None
-config = DefaultConfigs()
-
-
-if config.wandb:
-    wandb.login(key="486f67137c1b6905ac11b8caaaf6ecb276bfdf8e")
-    wandb.init(
-        project="pseudo-clickme",  # set the wandb project where this run will be logged
-        
-        config={  # track hyperparameters and run metadata
-            "learning_rate": config.lr,
-            "architecture": config.model_name,
-            "dataset": "ImageNet",
-            "epochs": config.epochs,
-            "mode": config.mode,
-        }
-    )
 
 def broadcast_xla_master_model_param(model, args):
     """
@@ -81,7 +65,7 @@ def _xla_logging(logger, value, batch_size, var_name=None):
     val = value.item()
     logger.update(val, batch_size)
     
-    if config.wandb and var_name != None:
+    if configs.wandb and var_name != None:
         wandb.log({var_name: val})
 
 def train(train_loader, model, criterion, optimizer, epoch):
@@ -111,7 +95,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
         # measure accuracy and update loss
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
-        if config.tpu != True:
+        if configs.tpu != True:
             losses.update(loss.item(), images.size(0))
             top1.update(acc1[0].item(), images.size(0))
             top5.update(acc5[0].item(), images.size(0))
@@ -123,10 +107,10 @@ def train(train_loader, model, criterion, optimizer, epoch):
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
-        # if config.tpu:
+        # if configs.tpu:
         #     xm.reduce_gradients(optimizer) # Reduce gradients
         # optimizer.step()
-        if config.tpu: 
+        if configs.tpu: 
             xm.optimizer_step(optimizer) # # barrier=True is required on single-core training but can be dropped with multiple cores
         else:
             optimizer.step()
@@ -135,8 +119,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
         
-        if (batch_id + 1) % config.interval == 0:
-            progress.synchronize_between_processes(config.tpu)
+        progress.synchronize_between_processes(configs.tpu) # synchronize the tensors across all tpus for every step
+        if (batch_id + 1) % configs.interval == 0:
             progress.display(batch_id + 1)
             
     return top1.avg, losses.avg
@@ -165,7 +149,7 @@ def validate(val_loader, model, criterion):
 
             # measure accuracy and record loss
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
-            if config.tpu != True:
+            if configs.tpu != True:
                 losses.update(loss.item(), images.size(0))
                 top1.update(acc1[0].item(), images.size(0))
                 top5.update(acc5[0].item(), images.size(0))
@@ -178,8 +162,8 @@ def validate(val_loader, model, criterion):
             batch_time.update(time.time() - end)
             end = time.time()
 
-            if (batch_id + 1) % config.interval == 0:
-                progress.synchronize_between_processes(config.tpu)
+            progress.synchronize_between_processes(configs.tpu) # synchronize the tensors across all tpus for every step
+            if (batch_id + 1) % configs.interval == 0:
                 progress.display(batch_id + 1)
                 
     return top1.avg, losses.avg
@@ -208,7 +192,7 @@ def test(test_loader, model, criterion):
 
             # measure accuracy and record loss
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
-            if config.tpu != True:
+            if configs.tpu != True:
                 losses.update(loss.item(), images.size(0))
                 top1.update(acc1[0].item(), images.size(0))
                 top5.update(acc5[0].item(), images.size(0))
@@ -221,8 +205,8 @@ def test(test_loader, model, criterion):
             batch_time.update(time.time() - end)
             end = time.time()
 
-            if (batch_id + 1) % config.interval == 0:
-                progress.synchronize_between_processes(config.tpu)
+            progress.synchronize_between_processes(configs.tpu) # synchronize the tensors across all tpus for every step
+            if (batch_id + 1) % configs.interval == 0:
                 progress.display(batch_id + 1)
                 
     return top1.avg, losses.avg
@@ -245,10 +229,10 @@ def save_checkpoint(state, is_best_acc):
         else: 
             torch.save(state, filename)
     
-    if not os.path.exists(config.weights): 
-        os.mkdir(config.weights)  # "/mnt/disks/bucket/pseudo_clickme/"
+    if not os.path.exists(configs.weights): 
+        os.mkdir(configs.weights)  # "/mnt/disks/bucket/pseudo_clickme/"
         
-    model_dir = os.path.join(config.weights, config.model_name) # "/mnt/disks/bucket/pseudo_clickme/resnet50"
+    model_dir = os.path.join(configs.weights, configs.model_name) # "/mnt/disks/bucket/pseudo_clickme/resnet50"
     if not os.path.exists(model_dir): 
         os.mkdir(model_dir)
         
@@ -257,25 +241,25 @@ def save_checkpoint(state, is_best_acc):
         os.mkdir(save_dir)
         
     filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth.tar") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
-    save_model(config.tpu, state, filename)
+    save_model(configs.tpu, state, filename)
     
-    rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch']-5) + ".pth.tar")
-    if os.path.exists(rmfile):
-        os.remove(rmfile)
-        
     if is_best_acc:
         best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
-        save_model(config.tpu, state, best_filename)
+        save_model(configs.tpu, state, best_filename)
+        
+    rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch'] - configs.ckpt_remain) + ".pth.tar")
+    if os.path.exists(rmfile):
+        os.remove(rmfile)
 
-def main(index):
+def _mp_fn(index):
     global device
     global best_acc
     
     # set running device
-    if config.tpu == True:
+    if configs.tpu == True:
         device = xm.xla_device()
     elif torch.cuda.is_available():
-        device = 'cuda:{}'.format(config.gpu_id) 
+        device = 'cuda:{}'.format(configs.gpu_id) 
     else: 
         device = "cpu"
     
@@ -283,74 +267,74 @@ def main(index):
         
     torch.set_default_tensor_type('torch.FloatTensor')
 
-    # Model Configurations
-    if config.pretrained:
-        print("=> using pre-trained model '{}'".format(config.model_name))
-        model = timm.create_model(config.model_name, num_classes=1000, pretrained=True)
+    # Model configsurations
+    if configs.pretrained:
+        print("=> using pre-trained model '{}'".format(configs.model_name))
+        model = timm.create_model(configs.model_name, num_classes=1000, pretrained=True)
     else:
-        print("=> creating model '{}'".format(config.model_name))
-        model = timm.create_model(config.model_name, num_classes=1000, pretrained=False)
+        print("=> creating model '{}'".format(configs.model_name))
+        model = timm.create_model(configs.model_name, num_classes=1000, pretrained=False)
 
     model.to(device)
-    if config.tpu:
+    if configs.tpu:
         broadcast_xla_master_model_param(model, None)
 
     criterion = nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.SGD(
         model.parameters(), 
-        lr = config.lr,
-        momentum = config.momentum,
-        weight_decay = config.weight_decay)
-    scheduler = StepLR(optimizer, step_size=config.step_size, gamma=config.gamma)
+        lr = configs.lr,
+        momentum = configs.momentum,
+        weight_decay = configs.weight_decay)
+    scheduler = StepLR(optimizer, step_size=configs.step_size, gamma=configs.gamma)
 
     cudnn.benchmark = True
 
     # Continue training
-    if config.resume:
-        if os.path.isfile(config.resume):
-            if config.tpu == True:
-                checkpoint = xm.load(os.path.join(config.weights, config.model_name, config.mode, 'best.pth.tar'))
+    if configs.resume:
+        if os.path.isfile(configs.resume):
+            if configs.tpu == True:
+                checkpoint = xm.load(os.path.join(configs.weights, configs.model_name, configs.mode, 'best.pth.tar'))
             else:
-                checkpoint = torch.load(os.path.join(config.weights, config.model_name, config.mode, 'best.pth.tar'))
-            config.start_epoch = checkpoint['epoch']
+                checkpoint = torch.load(os.path.join(configs.weights, configs.model_name, configs.mode, 'best.pth.tar'))
+            configs.start_epoch = checkpoint['epoch']
             best_acc = checkpoint['best_acc']
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             scheduler.load_state_dict(checkpoint['scheduler'])
             print("=> loaded checkpoint '{}' (epoch {})"
-                    .format(config.resume, checkpoint['epoch']))
+                    .format(configs.resume, checkpoint['epoch']))
         else:
-            print("=> no checkpoint found at '{}'".format(config.resume))
+            print("=> no checkpoint found at '{}'".format(configs.resume))
 
     # Dataset Initialization
-    if config.evaluate:
-        test_file_paths = glob.glob(os.path.join(config.data_dir, config.test_clickme_paths))
+    if configs.evaluate:
+        test_file_paths = glob.glob(os.path.join(configs.data_dir, configs.test_clickme_paths))
         test_dataset = ClickMe(test_file_paths, is_training=False)
         test_loader = DataLoader(
             test_dataset, 
-            batch_size=config.batch_size, 
-            num_workers=config.num_workers, 
+            batch_size=configs.batch_size, 
+            num_workers=configs.num_workers, 
             pin_memory=True,
         )
         test(test_loader, model, criterion)
         return
     
-    if config.mode == "imagenet":
-        train_file_paths = glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
-        val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_pseudo_paths))
-    if config.mode == "pseudo":
-        train_file_paths = glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
-        val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_clickme_paths))
-    if config.mode == "mix":
-        train_file_paths = glob.glob(os.path.join(config.data_dir, config.train_clickme_paths)) 
-        train_file_paths += glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
-        val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_clickme_paths))
+    if configs.mode == "imagenet":
+        train_file_paths = glob.glob(os.path.join(configs.data_dir, configs.train_pseudo_paths))
+        val_file_paths = glob.glob(os.path.join(configs.data_dir, configs.val_pseudo_paths))
+    if configs.mode == "pseudo":
+        train_file_paths = glob.glob(os.path.join(configs.data_dir, configs.train_pseudo_paths))
+        val_file_paths = glob.glob(os.path.join(configs.data_dir, configs.val_clickme_paths))
+    if configs.mode == "mix":
+        train_file_paths = glob.glob(os.path.join(configs.data_dir, configs.train_clickme_paths)) 
+        train_file_paths += glob.glob(os.path.join(configs.data_dir, configs.train_pseudo_paths))
+        val_file_paths = glob.glob(os.path.join(configs.data_dir, configs.val_clickme_paths))
         
     train_dataset = ClickMe(train_file_paths, is_training=True)
     val_dataset = ClickMe(val_file_paths, is_training=False)
     
-    num_tasks = utils.get_world_size(config.tpu)
-    global_rank = utils.get_rank(config.tpu)
+    num_tasks = utils.get_world_size(configs.tpu)
+    global_rank = utils.get_rank(configs.tpu)
 
     print("Global Rank:", global_rank)
     sampler_rank = global_rank
@@ -369,27 +353,27 @@ def main(index):
 
     train_loader = DataLoader(
         train_dataset, 
-        batch_size = config.batch_size, 
-        num_workers = config.num_workers,
+        batch_size = configs.batch_size, 
+        num_workers = configs.num_workers,
         pin_memory = True,
         sampler = train_sampler,
         drop_last = True # DataParallel cores must run the same number of batches each, and only full batches are allowed.
     )
     val_loader = DataLoader(
         val_dataset, 
-        batch_size = config.batch_size, 
-        num_workers = config.num_workers, 
+        batch_size = configs.batch_size, 
+        num_workers = configs.num_workers, 
         pin_memory = True,
         sampler = val_sampler,
         drop_last = True
     )
     
-    if config.tpu:
+    if configs.tpu:
         train_loader = pl.MpDeviceLoader(train_loader, device)
         val_loader = pl.MpDeviceLoader(val_loader, device)
 
-    for epoch in range(config.start_epoch, config.epochs):
-        print('Epoch: [%d | %d]' % (epoch + 1, config.epochs))
+    for epoch in range(configs.start_epoch, configs.epochs):
+        print('Epoch: [%d | %d]' % (epoch + 1, configs.epochs))
 
         # train for one epoch
         train_acc, train_loss = train(train_loader, model, criterion, optimizer, epoch)
@@ -401,32 +385,45 @@ def main(index):
         scheduler.step()
 
         # save model for best_acc model
-        if epoch < config.epochs // 2: continue
+        if epoch < configs.epochs // 2: continue
         is_best_acc = val_acc > best_acc
         best_acc = max(val_acc, best_acc)
         save_checkpoint({
             'epoch': epoch + 1,
-            "model_name": config.model_name,
+            "model_name": configs.model_name,
             'state_dict': model.state_dict(),
             'acc': val_acc,
             'best_acc': best_acc,
             'optimizer': optimizer.state_dict(),
             'scheduler' : scheduler.state_dict(),
-            'mode':config.mode
+            'mode':configs.mode
         }, is_best_acc)
         
         if epoch % 5 == 0:
             gc.collect()
 
 if __name__ == '__main__':
+    if configs.wandb:
+        wandb.login(key="486f67137c1b6905ac11b8caaaf6ecb276bfdf8e")
+        wandb.init(
+            project="pseudo-clickme",  # set the wandb project where this run will be logged
+            
+            config={  # track hyperparameters and run metadata
+                "learning_rate": configs.lr,
+                "architecture": configs.model_name,
+                "dataset": "ImageNet",
+                "epochs": configs.epochs,
+                "mode": configs.mode,
+            }
+        )
     
-    if config.tpu == True:
+    if configs.tpu == True:
         tpu_cores_per_node = 1
-        xmp.spawn(main, args=(), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
+        xmp.spawn(_mp_fn, args=(), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
     else:
-        main(0)
+        _mp_fn(0)
         
-    if config.wandb:
+    if configs.wandb:
         wandb.finish()  # [optional] finish the wandb run, necessary in notebooks
         
     print("***** DONE! *****")

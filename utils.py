@@ -2,8 +2,6 @@ import torch
 import numpy as np
 from scipy.stats import spearmanr
 
-from configs import DefaultConfigs
-
 import torch.distributed as dist
 
 try:
