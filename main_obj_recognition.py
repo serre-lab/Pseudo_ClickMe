@@ -236,7 +236,6 @@ def save_checkpoint(state, is_best_acc):
     |    |    |__best.pth
     |    |__mix
     |    |__pseudo
-    |
     |...
     '''
     
@@ -259,11 +258,14 @@ def save_checkpoint(state, is_best_acc):
         
     filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth.tar") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
     save_model(config.tpu, state, filename)
-  
+    
+    rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch']-5) + ".pth.tar")
+    if os.path.exists(rmfile):
+        os.remove(rmfile)
+        
     if is_best_acc:
         best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
         save_model(config.tpu, state, best_filename)
-        
 
 def main(index):
     global device

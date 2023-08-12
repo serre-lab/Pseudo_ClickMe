@@ -31,7 +31,7 @@ class ProgressMeter(object):
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
     
     def synchronize_between_processes(self, isXLA):
-        for meter in self.meters.values():
+        for meter in self.meters:
             meter.synchronize_between_processes(isXLA)
 
 class AverageMeter(object):
