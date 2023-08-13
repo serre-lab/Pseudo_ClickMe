@@ -119,8 +119,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
         
-        progress.synchronize_between_processes(configs.tpu) # synchronize the tensors across all tpus for every step
         if (batch_id + 1) % configs.interval == 0:
+            progress.synchronize_between_processes(configs.tpu) # synchronize the tensors across all tpus for every step
             progress.display(batch_id + 1)
             
     return top1.avg, losses.avg
@@ -162,8 +162,8 @@ def validate(val_loader, model, criterion):
             batch_time.update(time.time() - end)
             end = time.time()
 
-            progress.synchronize_between_processes(configs.tpu) # synchronize the tensors across all tpus for every step
             if (batch_id + 1) % configs.interval == 0:
+                progress.synchronize_between_processes(configs.tpu) # synchronize the tensors across all tpus for every step
                 progress.display(batch_id + 1)
                 
     return top1.avg, losses.avg
@@ -205,8 +205,8 @@ def test(test_loader, model, criterion):
             batch_time.update(time.time() - end)
             end = time.time()
 
-            progress.synchronize_between_processes(configs.tpu) # synchronize the tensors across all tpus for every step
             if (batch_id + 1) % configs.interval == 0:
+                progress.synchronize_between_processes(configs.tpu) # synchronize the tensors across all tpus for every step
                 progress.display(batch_id + 1)
                 
     return top1.avg, losses.avg
