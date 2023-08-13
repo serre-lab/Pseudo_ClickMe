@@ -101,8 +101,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
             top5.update(acc5[0].item(), images.size(0))
         else:
             xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
-            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc"))
-            xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc"))
+            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_train"))
+            xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_train"))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -155,8 +155,8 @@ def validate(val_loader, model, criterion):
                 top5.update(acc5[0].item(), images.size(0))
             else:
                 xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "val_loss"))
-                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc"))
-                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc"))
+                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_val"))
+                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_val"))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -399,8 +399,7 @@ def _mp_fn(index):
             'mode':configs.mode
         }, is_best_acc)
         
-        if epoch % 5 == 0:
-            gc.collect()
+        gc.collect()
 
 if __name__ == '__main__':
     if configs.wandb:
