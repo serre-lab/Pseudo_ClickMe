@@ -36,17 +36,17 @@ class Configs(object):
     
     @classmethod
     def set_configs(cls, args):
-        cls.data_dir = args.get('data_dir', cls.data_dir)  
-        cls.weights = args.get('weights', cls.weights)  
-        cls.model_name = args.get('model_name', cls.model_name)  
-        cls.mode = args.get('mode', cls.mode)  
-        cls.epochs = args.get('epochs', cls.epochs)  
-        cls.batch_size = args.get('batch_size', cls.batch_size)  
-        cls.learning_rate = args.get('learning_rate', cls.learning_rate) 
-        cls.interval = args.get('interval', cls.interval) 
-        cls.logger_update = args.get('logger_update', cls.logger_update) 
-        cls.evaluate = args.get('evaluate', cls.evaluate) 
-        cls.resume = args.get('resume', cls.resume) 
-        cls.pretrained = args.get('pretrained', cls.pretrained) 
-        cls.tpu = args.get('tpu', cls.tpu) 
-        cls.wandb = args.get('wandb', cls.wandb) 
+        if args.data_dir: cls.data_dir = args.data_dir
+        if args.weights: cls.weights = args.weights
+        if args.model_name: cls.model_name = args.model_name
+        if args.mode: cls.mode = args.mode
+        if args.epochs: cls.epochs = args.epochs
+        if args.batch_size: cls.batch_size = args.batch_size
+        if args.learning_rate: cls.learning_rate = args.learning_rate
+        if args.interval: cls.interval = args.interval
+        if args.logger_update: cls.logger_update = args.logger_update
+        if args.evaluate: cls.evaluate = args.evaluate
+        if args.resume: cls.resume = args.resume
+        if args.pretrained: cls.pretrained = args.pretrained
+        if args.tpu: cls.tpu = args.tpu
+        if args.wandb: cls.wandb = args.wandb
