@@ -74,8 +74,11 @@ def train(train_loader, model, criterion, optimizer, epoch):
     losses = AverageMeter('Loss', ':.2e')
     top1 = AverageMeter('Acc@1', ':6.2f')
     top5 = AverageMeter('Acc@5', ':6.2f')
+    
+    # display_steps_per_epoch = len(train_loader) // configs.logger_update if configs.tpu else len(train_loader)
+    display_steps_per_epoch = len(train_loader)
     progress = ProgressMeter(
-        len(train_loader),
+        display_steps_per_epoch,
         [batch_time, data_time, losses, top1, top5],
         prefix="Train: [{}]".format(epoch+1))
 
@@ -100,9 +103,10 @@ def train(train_loader, model, criterion, optimizer, epoch):
             top1.update(acc1[0].item(), images.size(0))
             top5.update(acc5[0].item(), images.size(0))
         else:
-            xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
-            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_train"))
-            xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_train"))
+            if (batch_id + 1) % configs.logger_update == 0: # otherwise, passing values from TPU to CPU will be very slow
+                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
+                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_train"))
+                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_train"))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -130,6 +134,7 @@ def validate(val_loader, model, criterion):
     losses = AverageMeter('Loss', ':.2e')
     top1 = AverageMeter('Acc@1', ':6.2f')
     top5 = AverageMeter('Acc@5', ':6.2f')
+    
     progress = ProgressMeter(
         len(val_loader),
         [batch_time, losses, top1, top5],
@@ -402,6 +407,79 @@ def _mp_fn(index):
         gc.collect()
 
 if __name__ == '__main__':
+    # create the command line parser
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-dd", "--data_dir",
+                        required=False,
+                        type = str,
+                        # choices=[
+                        #     '/mnt/disks/clickme-with-pseudo/test', # small-scale data examples
+                        #     '/mnt/disks/clickme-with-pseudo/'
+                        # ],
+                        help="please enter a data directory")
+    parser.add_argument("-wt", "--weights",
+                        required=False,
+                        type = str,
+                        help="please enter a directory save checkpoints")
+    parser.add_argument("-mn", "--model_name",
+                        required=False,
+                        type = str,
+                        help="Please specify a model architecture according to TIMM")
+    parser.add_argument("-md", "--mode",
+                        required=False,
+                        choices=[
+                            "pseudo", # pure imagenet images with pseudo clickme maps
+                            "mix",    # imagenet images with pseudo and real clickme maps
+                            "imagenet"# imagenet images 
+                        ],
+                        type = str,
+                        help="'pseudo', 'mix' or 'imagenet'?")
+    parser.add_argument("-ep", "--epochs",
+                        required=False,
+                        type = int,
+                        help="Number of Epochs")
+    parser.add_argument("-bs", "--batch_size",
+                        required=False,
+                        type = int,
+                        help="Batch Size")
+    parser.add_argument("-lr", "--learning_rate",
+                        required=False,
+                        type = int,
+                        help="Learning Rate")
+    parser.add_argument("-iv", "--interval",
+                        required=False,
+                        type = int,
+                        help="Step interval for printing logs")
+    parser.add_argument("-lu", "--logger_update",
+                        required=False,
+                        type = int,
+                        help="Update interval (needed for TPU training)")
+    parser.add_argument("-ev", "--evaluate",
+                        required=False,
+                        type = bool,
+                        help="Whether to evaluate a model")
+    parser.add_argument("-pt", "--pretrained",
+                        required=False,
+                        type = bool,
+                        help="Whether to use pretrained model from TIMM")
+    parser.add_argument("-rs", "--resume",
+                        required=False,
+                        type = bool,
+                        help="Whether to continue (usually used with 'evaluate')")
+    parser.add_argument("-gt", "--tpu",
+                        required=False,
+                        type = bool,
+                        help="Whether to use Google Cloud Tensor Processing Units")
+    parser.add_argument("-wb", "--wandb",
+                        required=False,
+                        type = bool,
+                        help="Whether to W&B to record progress")
+    
+    # modify the configurations according to args parser
+    args = parser.parse_args()
+    configs.set(args)
+    
+    # enable wandb
     if configs.wandb:
         wandb.login(key="486f67137c1b6905ac11b8caaaf6ecb276bfdf8e")
         wandb.init(
@@ -416,6 +494,7 @@ if __name__ == '__main__':
             }
         )
     
+    # start running
     if configs.tpu == True:
         tpu_cores_per_node = 1
         xmp.spawn(_mp_fn, args=(), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
