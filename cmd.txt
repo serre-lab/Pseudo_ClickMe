@@ -1,0 +1,27 @@
+gcloud compute tpus tpu-vm ssh --zone "us-central1-a" "pinyuan_feng_brown_edu@harmonization-pseudo" --project "beyond-dl-1503610372419" --worker=all
+
+git reset --hard
+gcloud compute tpus tpu-vm ssh --zone "us-central1-a" "pinyuan_feng_brown_edu@harmonization-pseudo" --project "beyond-dl-1503610372419" --worker=all --command="cd /clickme-with-pseudo/Pseudo_ClickMe/ && git pull"
+
+sudo pkill -f python
+gcloud compute tpus tpu-vm ssh --zone "us-central1-a" "pinyuan_feng_brown_edu@harmonization-pseudo" --project "beyond-dl-1503610372419" --worker=all --command="sudo pkill -f python"
+
+python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py 
+
+python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py \
+-dd "/mnt/disks/clickme-with-pseudo/" \
+-mn "resnet50" \
+-md "imagenet" \
+-ep 90 \
+-bs 256 \
+-iv 100 \
+-lu 50 \
+-ev False \
+-pt False \
+-rs False \
+-gt True \
+-wb True
+
+python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py --dir '/mnt/disks/clickme-with-pseudo/test' --epoch 90 --pretrained True --eval False --model "imagenet"
+
+sudo python3 -m torch_xla.distributed.xla_dist --tpu=${TPU_NAME} --restart-tpuvm-pod-server --env XRT_MESH_CONNECT_WAIT=12000 --env XLA_USE_BF16=1 --env PYTHONUNBUFFERED=1 -- python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py
