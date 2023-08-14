@@ -103,7 +103,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
             top1.update(acc1[0].item(), images.size(0))
             top5.update(acc5[0].item(), images.size(0))
         else:
-            if (batch_id + 1) % configs.logger_update == 0: # otherwise, passing values from TPU to CPU will be very slow
+            if configs.epochs <= configs.logger_update or (batch_id + 1) % configs.logger_update == 0: # otherwise, passing values from TPU to CPU will be very slow
                 xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
                 xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_train"))
                 xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_train"))
