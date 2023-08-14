@@ -477,7 +477,7 @@ if __name__ == '__main__':
     
     # modify the configurations according to args parser
     args = parser.parse_args()
-    configs.set(args)
+    configs.set_configs(args)
     
     # enable wandb
     if configs.wandb:
