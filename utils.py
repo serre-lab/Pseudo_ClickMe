@@ -150,3 +150,12 @@ def is_dist_avail_and_initialized(isXLA):
         return False
     return True
 
+class str2bool(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if values.lower() in ('true', 't', '1'):
+            setattr(namespace, self.dest, True)
+        elif values.lower() in ('false', 'f', '0'):
+            setattr(namespace, self.dest, False)
+        else:
+            raise argparse.ArgumentTypeError(f"Invalid value for {self.dest}: {values}")
+

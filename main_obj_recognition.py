@@ -456,23 +456,28 @@ if __name__ == '__main__':
                         help="Update interval (needed for TPU training)")
     parser.add_argument("-ev", "--evaluate",
                         required=False,
-                        type = bool,
+                        type = str,
+                        action = utils.str2bool,
                         help="Whether to evaluate a model")
     parser.add_argument("-pt", "--pretrained",
                         required=False,
-                        type = bool,
+                        type = str,
+                        action = utils.str2bool,
                         help="Whether to use pretrained model from TIMM")
     parser.add_argument("-rs", "--resume",
                         required=False,
-                        type = bool,
+                        type = str,
+                        action = utils.str2bool,
                         help="Whether to continue (usually used with 'evaluate')")
     parser.add_argument("-gt", "--tpu",
                         required=False,
-                        type = bool,
+                        type = str,
+                        action = utils.str2bool,
                         help="Whether to use Google Cloud Tensor Processing Units")
     parser.add_argument("-wb", "--wandb",
                         required=False,
-                        type = bool,
+                        type = str,
+                        action = utils.str2bool,
                         help="Whether to W&B to record progress")
     
     # modify the configurations according to args parser
