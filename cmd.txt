@@ -12,19 +12,7 @@ export XLA_USE_BF16=1 && export PYTHONUNBUFFERED=1
 
 python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py 
 
-python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py \
--dd "/mnt/disks/clickme-with-pseudo/" \
--mn "resnet50" \
--md "imagenet" \
--ep 90 \
--bs 256 \
--iv 100 \
--lu 50 \
--ev False \
--pt False \
--rs False \
--gt True \
--wb True
+python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py -dd "/mnt/disks/clickme-with-pseudo/" -mn "resnet50" -md "imagenet" -ep 90 -bs 256 -iv 100 -lu 50 -ev False -pt False -rs False -gt True -wb True
 
 python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py --dir '/mnt/disks/clickme-with-pseudo/test' --epoch 90 --pretrained True --eval False --model "imagenet"
 

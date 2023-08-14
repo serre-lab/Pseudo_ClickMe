@@ -36,17 +36,45 @@ class Configs(object):
     
     @classmethod
     def set_configs(cls, args):
-        if args.data_dir: cls.data_dir = args.data_dir
-        if args.weights: cls.weights = args.weights
-        if args.model_name: cls.model_name = args.model_name
-        if args.mode: cls.mode = args.mode
-        if args.epochs: cls.epochs = args.epochs
-        if args.batch_size: cls.batch_size = args.batch_size
-        if args.learning_rate: cls.learning_rate = args.learning_rate
-        if args.interval: cls.interval = args.interval
-        if args.logger_update: cls.logger_update = args.logger_update
-        if args.evaluate: cls.evaluate = args.evaluate
-        if args.resume: cls.resume = args.resume
-        if args.pretrained: cls.pretrained = args.pretrained
-        if args.tpu: cls.tpu = args.tpu
-        if args.wandb: cls.wandb = args.wandb
+        if args.data_dir: 
+            cls.data_dir = args.data_dir
+            print("data dir: ", args.data_dir)
+        if args.weights: 
+            cls.weights = args.weights
+            print("weights: ", args.weights)
+        if args.model_name: 
+            cls.model_name = args.model_name
+            print("model_name: ", args.model_name)
+        if args.mode: 
+            cls.mode = args.mode
+            print("mode: ", args.mode)
+        if args.epochs: 
+            cls.epochs = args.epochs
+            print("epochs: ", args.epochs)
+        if args.batch_size: 
+            cls.batch_size = args.batch_size
+            print("batch_size: ", args.batch_size)
+        if args.learning_rate: 
+            cls.learning_rate = args.learning_rate
+            print("learning_rate: ", args.learning_rate)
+        if args.interval: 
+            cls.interval = args.interval
+            print("interval: ", args.interval)
+        if args.logger_update: 
+            cls.logger_update = args.logger_update
+            print("logger_update: ", args.logger_update)
+        if args.evaluate: 
+            cls.evaluate = args.evaluate
+            print("evaluate: ", args.evaluate)
+        if args.resume: 
+            cls.resume = args.resume
+            print("resume: ", args.resume)
+        if args.pretrained: 
+            cls.pretrained = args.pretrained
+            print("pretrained: ", args.pretrained)
+        if args.tpu: 
+            cls.tpu = args.tpu
+            print("tpu: ", args.tpu)
+        if args.wandb: 
+            cls.wandb = args.wandb
+            print("wandb: ", args.wandb)
