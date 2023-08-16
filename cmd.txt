@@ -9,7 +9,10 @@ gcloud compute tpus tpu-vm ssh --zone "us-central1-a" "pinyuan_feng_brown_edu@ha
 export TPU_NAME=harmonization-pseudo
 export XRT_TPU_CONFIG="localservice;0;localhost:51011"
 export XLA_USE_BF16=1 && export PYTHONUNBUFFERED=1
-python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py  --tpu True
+
+python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py  --tpu True --tpu_cores_per_node 1 --batch_size 32
+
+python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py  --tpu True --tpu_cores_per_node 8 --batch_size 4
 
 python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py -dd "/mnt/disks/clickme-with-pseudo/" -mn "resnet50" -md "imagenet" -ep 100 -bs 512 -iv 100 -lu 50 -ev False -pt False -rs False -gt True -wb True
 

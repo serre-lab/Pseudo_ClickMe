@@ -489,6 +489,9 @@ if __name__ == '__main__':
     parser.add_argument("-gid", "--gpu_id", required=False, type = int,
                         default = 1,
                         help="specify gpu id for single gpu training")
+    parser.add_argument("-tc", "--tpu_cores_per_node", required=False, type = int,
+                        default = 1,
+                        help="specify the number of tpu cores")
     parser.add_argument("-ckpt", "--ckpt_remain", required=False, type = int,
                         default = 5,
                         help="how many checkpoints can be saved at most?")
@@ -541,9 +544,9 @@ if __name__ == '__main__':
     
     # start running
     if args.tpu == True:
-        tpu_cores_per_node = 1  # a TPUv3 device contains 4 chips and 8 cores in total
+        tpu_cores_per_node = args.tpu_cores_per_node  # a TPUv3 device contains 4 chips and 8 cores in total
         xmp.spawn(_mp_fn, args=(args,), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
-                                                                      # don't forget comma args=(args,)
+                                                                   # don't forget comma args=(args,)
     else:
         _mp_fn(0, args)
         
