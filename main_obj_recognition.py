@@ -62,14 +62,14 @@ def broadcast_xla_master_model_param(model, args):
     xm.mark_step()
     xm.rendezvous("broadcast_xla_master_model_param")
 
-def _xla_logging(logger, value, batch_size, args, var_name=None):
+def _xla_logging(logger, value, batch_size, args, global_rank, var_name=None):
     val = value.item()
     logger.update(val, batch_size)
     
-    if args.wandb and var_name != None:
+    if global_rank == 0 and args.wandb and var_name != None: # just update values on the main process
         wandb.log({var_name: val})
 
-def train(train_loader, model, criterion, optimizer, epoch, args):
+def train(train_loader, model, criterion, optimizer, epoch, args, global_rank):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.2e')
@@ -108,9 +108,9 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
             #     xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
             #     xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_train"))
             #     xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_train"))
-            xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, "training_loss"))
-            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, "top1_acc_train"))
-            xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, "top5_acc_train"))
+            xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, global_rank, "training_loss"))
+            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc_train"))
+            xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, global_rank, "top5_acc_train"))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -129,11 +129,11 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         
         if (batch_id + 1) % args.interval == 0:
             progress.synchronize_between_processes(args.tpu) # synchronize the tensors across all tpus for every step
-            progress.display(batch_id + 1)
+            progress.display(batch_id + 1, args.tpu)
             
     return top1.avg, losses.avg
 
-def validate(val_loader, model, criterion, args):
+def validate(val_loader, model, criterion, args, global_rank):
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.2e')
     top1 = AverageMeter('Acc@1', ':6.2f')
@@ -163,9 +163,9 @@ def validate(val_loader, model, criterion, args):
                 top1.update(acc1[0].item(), images.size(0))
                 top5.update(acc5[0].item(), images.size(0))
             else:
-                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, "val_loss"))
-                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, "top1_acc_val"))
-                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, "top5_acc_val"))
+                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, global_rank, "val_loss"))
+                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc_val"))
+                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, global_rank, "top5_acc_val"))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -173,11 +173,11 @@ def validate(val_loader, model, criterion, args):
 
             if (batch_id + 1) % args.interval == 0:
                 progress.synchronize_between_processes(args.tpu) # synchronize the tensors across all tpus for every step
-                progress.display(batch_id + 1)
+                progress.display(batch_id + 1, args.tpu)
                 
     return top1.avg, losses.avg
 
-def test(test_loader, model, criterion, args):
+def test(test_loader, model, criterion, args, global_rank):
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.2e')
     top1 = AverageMeter('Acc@1', ':6.2f')
@@ -206,9 +206,9 @@ def test(test_loader, model, criterion, args):
                 top1.update(acc1[0].item(), images.size(0))
                 top5.update(acc5[0].item(), images.size(0))
             else:
-                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args))
-                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args))
-                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args))
+                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, global_rank))
+                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank))
+                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, global_rank))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -216,7 +216,7 @@ def test(test_loader, model, criterion, args):
 
             if (batch_id + 1) % args.interval == 0:
                 progress.synchronize_between_processes(args.tpu) # synchronize the tensors across all tpus for every step
-                progress.display(batch_id + 1)
+                progress.display(batch_id + 1, args.tpu)
                 
     return top1.avg, losses.avg
 
@@ -263,6 +263,8 @@ def save_checkpoint(state, is_best_acc, args):
 def _mp_fn(index, args):
     global device
     global best_acc
+    
+    warnings.filterwarnings("ignore", category=UserWarning, message="libtpu.so already in use by another process.")
     
     # set running device
     if args.tpu == True:
@@ -397,10 +399,10 @@ def _mp_fn(index, args):
             print('Epoch: [%d | %d]' % (epoch + 1, args.epochs))
 
         # train for one epoch
-        train_acc, train_loss = train(train_loader, model, criterion, optimizer, epoch, args)
+        train_acc, train_loss = train(train_loader, model, criterion, optimizer, epoch, args, global_rank)
 
         # evaluate on validation set
-        val_acc, val_loss = validate(val_loader, model, criterion, args)
+        val_acc, val_loss = validate(val_loader, model, criterion, args, global_rank)
 
         # Update scheduler
         scheduler.step()
@@ -553,7 +555,7 @@ if __name__ == '__main__':
     if args.wandb:
         wandb.finish()  # [optional] finish the wandb run, necessary in notebooks
         
-    print("*************** DONE! ***************")
-    
+    print("****************************** DONE! ******************************")
     end_time = time.time()
     print('Total hours: ', round((end_time - start_time) / 3600, 1))
+    print("****************************** DONE! ******************************")
