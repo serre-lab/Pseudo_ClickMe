@@ -266,9 +266,26 @@ def _mp_fn(index, args):
     global device
     global best_acc
     
+    global_rank = utils.get_rank(args.tpu)
+    
+    # enable wandb
+    if args.wandb and global_rank == 0:
+        wandb.login(key="486f67137c1b6905ac11b8caaaf6ecb276bfdf8e")
+        wandb.init(
+            project="pseudo-clickme",  # set the wandb project where this run will be logged
+            entity="serrelab",
+            config={  # track hyperparameters and run metadata
+                "learning_rate": args.learning_rate,
+                "architecture": args.model_name,
+                "dataset": "ImageNet",
+                "epochs": args.epochs,
+                "mode": args.mode,
+            }
+        )
+    
     # set running device
     if args.tpu == True:
-        device = xm.xla_device()
+        device = xm.xla_device() # device on current procoess
     elif torch.cuda.is_available():
         device = 'cuda:{}'.format(args.gpu_id) 
     else: 
@@ -353,11 +370,10 @@ def _mp_fn(index, args):
     train_dataset = ClickMe(train_file_paths, is_training=True)
     val_dataset = ClickMe(val_file_paths, is_training=False)
     
-    num_tasks = utils.get_world_size(args.tpu)
-    global_rank = utils.get_rank(args.tpu)
-
     print("Global Rank:", global_rank)
     sampler_rank = global_rank
+    
+    num_tasks = utils.get_world_size(args.tpu)
 
     train_sampler = DistributedSampler(
         train_dataset,
@@ -391,7 +407,7 @@ def _mp_fn(index, args):
     if args.tpu:
         train_loader = pl.MpDeviceLoader(train_loader, device)
         val_loader = pl.MpDeviceLoader(val_loader, device)
-
+        
     for epoch in range(args.start_epoch, args.epochs):
         if args.tpu:
             xm.master_print('Epoch: [%d | %d]' % (epoch + 1, args.epochs))
@@ -526,21 +542,6 @@ if __name__ == '__main__':
     
     # modify the configurations according to args parser
     args = parser.parse_args()
-    
-    # enable wandb
-    if args.wandb:
-        wandb.login(key="486f67137c1b6905ac11b8caaaf6ecb276bfdf8e")
-        wandb.init(
-            project="pseudo-clickme",  # set the wandb project where this run will be logged
-            entity="serrelab",
-            config={  # track hyperparameters and run metadata
-                "learning_rate": args.learning_rate,
-                "architecture": args.model_name,
-                "dataset": "ImageNet",
-                "epochs": args.epochs,
-                "mode": args.mode,
-            }
-        )
         
     start_time = time.time()
     
