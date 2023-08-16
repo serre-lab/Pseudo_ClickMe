@@ -17,7 +17,7 @@ class Configs(object):
     start_epoch = 0
     batch_size = 32
     momentum = 0.9
-    lr = 0.1
+    learning_rate = 0.1
     weight_decay = 1e-5
     interval = 10
     num_workers = 8

@@ -493,6 +493,7 @@ if __name__ == '__main__':
                         default = 5,
                         help="how many checkpoints can be saved at most?")
     parser.add_argument("-lu", "--logger_update", required=False, type = int,
+                        default = 50,
                         help="Update interval (needed for TPU training)")
     parser.add_argument("-sd", "--seed", required=False, type = int,
                         default = 42,
@@ -528,7 +529,7 @@ if __name__ == '__main__':
             project="pseudo-clickme",  # set the wandb project where this run will be logged
             entity="serrelab",
             config={  # track hyperparameters and run metadata
-                "learning_rate": args.lr,
+                "learning_rate": args.learning_rate,
                 "architecture": args.model_name,
                 "dataset": "ImageNet",
                 "epochs": args.epochs,
