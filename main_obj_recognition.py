@@ -76,8 +76,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args, global_rank):
     top1 = AverageMeter('Acc@1', ':6.3f')
     top5 = AverageMeter('Acc@5', ':6.3f')
     
-    # display_steps_per_epoch = len(train_loader) // args.logger_update if args.tpu else len(train_loader)
-    display_steps_per_epoch = len(train_loader)
+    display_steps_per_epoch = len(train_loader) // args.tpu_cores_per_node if args.tpu else len(train_loader)
     progress = ProgressMeter(
         display_steps_per_epoch,
         [batch_time, data_time, losses, top1, top5],
@@ -139,8 +138,9 @@ def validate(val_loader, model, criterion, args, global_rank):
     top1 = AverageMeter('Acc@1', ':6.3f')
     top5 = AverageMeter('Acc@5', ':6.3f')
     
+    display_steps_per_epoch = len(val_loader) // args.tpu_cores_per_node if args.tpu else len(train_loader)
     progress = ProgressMeter(
-        len(val_loader),
+        display_steps_per_epoch,
         [batch_time, losses, top1, top5],
         prefix='Val: ')
 
@@ -171,7 +171,7 @@ def validate(val_loader, model, criterion, args, global_rank):
             batch_time.update(time.time() - end)
             end = time.time()
 
-            if (batch_id + 1) % args.interval == 0:
+            if (batch_id + 1) % (args.interval // 5) == 0:
                 progress.synchronize_between_processes(args.tpu) # synchronize the tensors across all tpus for every step
                 progress.display(batch_id + 1, args.tpu)
                 
@@ -182,8 +182,10 @@ def test(test_loader, model, criterion, args, global_rank):
     losses = AverageMeter('Loss', ':.2e')
     top1 = AverageMeter('Acc@1', ':6.3f')
     top5 = AverageMeter('Acc@5', ':6.3f')
+    
+    display_steps_per_epoch = len(test_loader) // args.tpu_cores_per_node if args.tpu else len(train_loader)
     progress = ProgressMeter(
-        len(test_loader),
+        display_steps_per_epoch,
         [batch_time, losses, top1, top5],
         prefix='Val: ')
 
