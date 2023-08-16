@@ -519,7 +519,8 @@ if __name__ == '__main__':
     # start running
     if configs.tpu == True:
         tpu_cores_per_node = 8 # # a TPUv3 device contains 4 chips and 8 cores in total
-        xmp.spawn(_mp_fn, args=(configs), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
+        xmp.spawn(_mp_fn, args=(configs,), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
+                                                                      # don't forget comma args=(configs,)
     else:
         _mp_fn(configs)
         
