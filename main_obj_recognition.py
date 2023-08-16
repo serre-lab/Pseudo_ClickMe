@@ -62,7 +62,7 @@ def broadcast_xla_master_model_param(model, args):
     xm.mark_step()
     xm.rendezvous("broadcast_xla_master_model_param")
 
-def _xla_logging(logger, value, batch_size, var_name=None):
+def _xla_logging(logger, value, batch_size, args, var_name=None):
     val = value.item()
     logger.update(val, batch_size)
     
@@ -108,9 +108,9 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
             #     xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
             #     xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_train"))
             #     xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_train"))
-            xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
-            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_train"))
-            xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_train"))
+            xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, "training_loss"))
+            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, "top1_acc_train"))
+            xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, "top5_acc_train"))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -163,9 +163,9 @@ def validate(val_loader, model, criterion, args):
                 top1.update(acc1[0].item(), images.size(0))
                 top5.update(acc5[0].item(), images.size(0))
             else:
-                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "val_loss"))
-                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_val"))
-                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_val"))
+                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, "val_loss"))
+                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, "top1_acc_val"))
+                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, "top5_acc_val"))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -206,9 +206,9 @@ def test(test_loader, model, criterion, args):
                 top1.update(acc1[0].item(), images.size(0))
                 top5.update(acc5[0].item(), images.size(0))
             else:
-                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0)))
-                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0)))
-                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0)))
+                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args))
+                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args))
+                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
