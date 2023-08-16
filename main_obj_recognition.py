@@ -264,8 +264,6 @@ def _mp_fn(index, args):
     global device
     global best_acc
     
-    warnings.filterwarnings("ignore", category=UserWarning, message="libtpu.so already in use by another process.")
-    
     # set running device
     if args.tpu == True:
         device = xm.xla_device()
@@ -483,7 +481,7 @@ if __name__ == '__main__':
                         default = 1e-5,
                         help="weight decay, regularization")
     parser.add_argument("-iv", "--interval", required=False, type = int,
-                        default = 10,
+                        default = 2,
                         help="Step interval for printing logs")
     parser.add_argument("-nw", "--num_workers", required=False, type = int,
                         default = 8,
