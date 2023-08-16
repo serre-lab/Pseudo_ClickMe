@@ -349,12 +349,9 @@ def _mp_fn(index):
     
     num_tasks = utils.get_world_size(configs.tpu)
     global_rank = utils.get_rank(configs.tpu)
-    sampler_rank = global_rank
 
-    if configs.tpu:
-        xm.master_print("Global Rank:", global_rank)
-    else:
-        print("Global Rank:", global_rank)
+    print("Global Rank:", global_rank)
+    sampler_rank = global_rank
 
     train_sampler = DistributedSampler(
         train_dataset,
