@@ -13,7 +13,7 @@ data_transforms = {
         transforms.RandomResizedCrop(size=224, scale=(0.9, 1.0)),  # Randomly crop and resize the image tensor
         transforms.RandomHorizontalFlip(p=0.5),  # Randomly flip the image horizontally with a probability of 0.5
         transforms.RandomVerticalFlip(p=0.5),  # Randomly flip the image vertically with a probability of 0.5
-        transforms.RandomRotation(degrees=(-15, 15)),
+        transforms.RandomRotation(degrees=(-10, 10)),
     ]),
     'norm': transforms.Compose([
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])

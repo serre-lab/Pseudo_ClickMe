@@ -103,10 +103,13 @@ def train(train_loader, model, criterion, optimizer, epoch):
             top1.update(acc1[0].item(), images.size(0))
             top5.update(acc5[0].item(), images.size(0))
         else:
-            if configs.epochs <= configs.logger_update or (batch_id + 1) % configs.logger_update == 0: # otherwise, passing values from TPU to CPU will be very slow
-                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
-                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_train"))
-                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_train"))
+            # if configs.epochs <= configs.logger_update or (batch_id + 1) % configs.logger_update == 0: # otherwise, passing values from TPU to CPU will be very slow
+            #     xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
+            #     xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_train"))
+            #     xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_train"))
+            xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
+            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_train"))
+            xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_train"))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -489,7 +492,7 @@ if __name__ == '__main__':
         wandb.login(key="486f67137c1b6905ac11b8caaaf6ecb276bfdf8e")
         wandb.init(
             project="pseudo-clickme",  # set the wandb project where this run will be logged
-            
+            entity="serrelab",
             config={  # track hyperparameters and run metadata
                 "learning_rate": configs.lr,
                 "architecture": configs.model_name,
@@ -498,10 +501,12 @@ if __name__ == '__main__':
                 "mode": configs.mode,
             }
         )
+        
+    start_time = time.time()
     
     # start running
     if configs.tpu == True:
-        tpu_cores_per_node = 1
+        tpu_cores_per_node = 8
         xmp.spawn(_mp_fn, args=(), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
     else:
         _mp_fn(0)
@@ -509,4 +514,7 @@ if __name__ == '__main__':
     if configs.wandb:
         wandb.finish()  # [optional] finish the wandb run, necessary in notebooks
         
-    print("***** DONE! *****")
+    print("*************** DONE! ***************")
+    
+    end_time = time.time()
+    print('Total hours: ', round((end_time - start_time) / 3600, 1))

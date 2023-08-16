@@ -21,7 +21,7 @@ class Configs(object):
     weight_decay = 1e-5
     interval = 10
     num_workers = 8
-    step_size = 30
+    step_size = 25
     gamma = 0.1
     gpu_id = 1
     ckpt_remain = 5
