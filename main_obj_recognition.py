@@ -277,10 +277,16 @@ def _mp_fn(index):
 
     # Model configsurations
     if configs.pretrained:
-        print("=> using pre-trained model '{}'".format(configs.model_name))
+        if configs.tpu:
+            xm.master_print("=> using pre-trained model '{}'".format(configs.model_name))
+        else:
+            print("=> using pre-trained model '{}'".format(configs.model_name))
         model = timm.create_model(configs.model_name, num_classes=1000, pretrained=True)
     else:
-        print("=> creating model '{}'".format(configs.model_name))
+        if configs.tpu:
+            xm.master_print("=> creating model '{}'".format(configs.model_name))
+        else:
+            print("=> creating model '{}'".format(configs.model_name))
         model = timm.create_model(configs.model_name, num_classes=1000, pretrained=False)
 
     model.to(device)
@@ -381,7 +387,10 @@ def _mp_fn(index):
         val_loader = pl.MpDeviceLoader(val_loader, device)
 
     for epoch in range(configs.start_epoch, configs.epochs):
-        print('Epoch: [%d | %d]' % (epoch + 1, configs.epochs))
+        if configs.tpu:
+            xm.master_print('Epoch: [%d | %d]' % (epoch + 1, configs.epochs))
+        else:
+            print('Epoch: [%d | %d]' % (epoch + 1, configs.epochs))
 
         # train for one epoch
         train_acc, train_loss = train(train_loader, model, criterion, optimizer, epoch)
