@@ -300,7 +300,7 @@ def _mp_fn(index, args):
     criterion = nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.SGD(
         model.parameters(), 
-        lr = args.lr,
+        lr = args.learning_rate,
         momentum = args.momentum,
         weight_decay = args.weight_decay)
     scheduler = StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
@@ -499,23 +499,23 @@ if __name__ == '__main__':
                         default = 42,
                         help="Update interval (needed for TPU training)")
     parser.add_argument("-ev", "--evaluate", required=False, type = str,
-                        default = "False",
+                        default = False,
                         action = utils.str2bool,
                         help="Whether to evaluate a model")
     parser.add_argument("-pt", "--pretrained", required=False, type = str,
-                        default = "False",
+                        default = False,
                         action = utils.str2bool,
                         help="Whether to use pretrained model from TIMM")
     parser.add_argument("-rs", "--resume", required=False, type = str,
-                        default = "False",
+                        default = False,
                         action = utils.str2bool,
                         help="Whether to continue (usually used with 'evaluate')")
     parser.add_argument("-gt", "--tpu", required=False, type = str,
-                        default = "False",
+                        default = False,
                         action = utils.str2bool,
                         help="Whether to use Google Cloud Tensor Processing Units")
     parser.add_argument("-wb", "--wandb", required=False, type = str,
-                        default = "False",
+                        default = False,
                         action = utils.str2bool,
                         help="Whether to W&B to record progress")
     
