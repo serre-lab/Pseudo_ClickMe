@@ -259,7 +259,7 @@ def save_checkpoint(state, is_best_acc):
     if os.path.exists(rmfile):
         os.remove(rmfile)
 
-def _mp_fn(configs):
+def _mp_fn(index, configs):
     global device
     global best_acc
     
@@ -522,7 +522,7 @@ if __name__ == '__main__':
         xmp.spawn(_mp_fn, args=(configs,), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
                                                                       # don't forget comma args=(configs,)
     else:
-        _mp_fn(configs)
+        _mp_fn(0, configs)
         
     if configs.wandb:
         wandb.finish()  # [optional] finish the wandb run, necessary in notebooks
