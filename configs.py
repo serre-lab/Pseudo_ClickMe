@@ -26,6 +26,7 @@ class Configs(object):
     gpu_id = 1
     ckpt_remain = 5
     logger_update = 50
+    seed = 42
 
     # Boolean Parameters
     evaluate = False # set resume to be True at the same time

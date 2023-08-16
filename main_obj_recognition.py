@@ -259,7 +259,7 @@ def save_checkpoint(state, is_best_acc):
     if os.path.exists(rmfile):
         os.remove(rmfile)
 
-def _mp_fn(index):
+def _mp_fn(configs):
     global device
     global best_acc
     
@@ -272,8 +272,11 @@ def _mp_fn(index):
         device = "cpu"
     
     best_acc = 0
-        
     torch.set_default_tensor_type('torch.FloatTensor')
+    
+    seed = configs.seed + utils.get_rank(configs.tpu)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
 
     # Model configsurations
     if configs.pretrained:
@@ -515,10 +518,10 @@ if __name__ == '__main__':
     
     # start running
     if configs.tpu == True:
-        tpu_cores_per_node = 8
-        xmp.spawn(_mp_fn, args=(), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
+        tpu_cores_per_node = 8 # # a TPUv3 device contains 4 chips and 8 cores in total
+        xmp.spawn(_mp_fn, args=(configs), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
     else:
-        _mp_fn(0)
+        _mp_fn(configs)
         
     if configs.wandb:
         wandb.finish()  # [optional] finish the wandb run, necessary in notebooks
