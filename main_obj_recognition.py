@@ -9,6 +9,7 @@ import gc
 import warnings
 warnings.filterwarnings('ignore')
 
+import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
