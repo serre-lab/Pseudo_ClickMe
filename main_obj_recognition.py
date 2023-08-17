@@ -86,11 +86,11 @@ def train(train_loader, model, criterion, optimizer, epoch, args, global_rank):
     model.train()
 
     end = time.time()
-    for batch_id, (images, heatmaps, target) in enumerate(train_loader):
+    for batch_id, (images, _, target) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        images, heatmaps, target = images.to(device, non_blocking=True), heatmaps.to(device, non_blocking=True), target.to(device, non_blocking=True)
+        images, target = images.to(device, non_blocking=True), target.to(device, non_blocking=True)
 
         # compute prediction output
         output = model(images)
@@ -103,13 +103,13 @@ def train(train_loader, model, criterion, optimizer, epoch, args, global_rank):
             top1.update(acc1[0].item(), images.size(0))
             top5.update(acc5[0].item(), images.size(0))
         else:
-            # if args.epochs <= args.logger_update or (batch_id + 1) % args.logger_update == 0: # otherwise, passing values from TPU to CPU will be very slow
-            #     xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
-            #     xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_train"))
-            #     xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_train"))
-            xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, global_rank, "training_loss"))
-            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc_train"))
-            xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, global_rank, "top5_acc_train"))
+            if args.epochs <= args.logger_update or (batch_id + 1) % args.logger_update == 0: # otherwise, passing values from TPU to CPU will be very slow
+                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), "training_loss"))
+                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc_train"))
+                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), "top5_acc_train"))
+            # xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, global_rank, "training_loss"))
+            # xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc_train"))
+            # xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, global_rank, "top5_acc_train"))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -149,8 +149,8 @@ def validate(val_loader, model, criterion, args, global_rank):
 
     with torch.no_grad():
         end = time.time()
-        for batch_id, (images, heatmaps, target) in enumerate(val_loader):
-            images, heatmaps, target = images.to(device, non_blocking=True), heatmaps.to(device, non_blocking=True), target.to(device, non_blocking=True)
+        for batch_id, (images, _, target) in enumerate(val_loader):
+            images, target = images.to(device, non_blocking=True), target.to(device, non_blocking=True)
 
             # compute prediction and loss
             output = model(images)
@@ -514,7 +514,7 @@ if __name__ == '__main__':
                         default = 5,
                         help="how many checkpoints can be saved at most?")
     parser.add_argument("-lu", "--logger_update", required=False, type = int,
-                        default = 50,
+                        default = 10,
                         help="Update interval (needed for TPU training)")
     parser.add_argument("-sd", "--seed", required=False, type = int,
                         default = 42,
