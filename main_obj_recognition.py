@@ -255,11 +255,13 @@ def save_checkpoint(state, is_best_acc, args):
     save_model(args.tpu, state, filename)
     
     if is_best_acc:
+        xm.master_print("is best", str(state['epoch']))
         best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
         save_model(args.tpu, state, best_filename)
         
     rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
     if os.path.exists(rmfile):
+        xm.master_print("to be removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
         os.remove(rmfile)
 
 def _mp_fn(index, args):
