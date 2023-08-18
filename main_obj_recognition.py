@@ -222,7 +222,7 @@ def test(test_loader, model, criterion, args, global_rank):
                 
     return top1.avg, losses.avg
 
-def save_checkpoint(state, is_best_acc, args):
+def save_checkpoint(state, is_best_acc, args, global_rank):
     '''
     /mnt/disks/bucket/pseudo_clickme/
     |__resnet50
@@ -260,7 +260,7 @@ def save_checkpoint(state, is_best_acc, args):
         save_model(args.tpu, state, best_filename)
         
     rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
-    if os.path.exists(rmfile):
+    if global_rank == 0 and os.path.exists(rmfile):
         xm.master_print("to be removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
         os.remove(rmfile)
 
@@ -438,7 +438,7 @@ def _mp_fn(index, args):
             'optimizer': optimizer.state_dict(),
             'scheduler' : scheduler.state_dict(),
             'mode':args.mode
-        }, is_best_acc, args)
+        }, is_best_acc, args, global_rank)
         
         gc.collect()
 
