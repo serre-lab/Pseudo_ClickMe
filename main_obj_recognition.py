@@ -171,7 +171,7 @@ def validate(val_loader, model, criterion, args, global_rank):
             batch_time.update(time.time() - end)
             end = time.time()
 
-            if (batch_id + 1) % (args.interval // 5) == 0:
+            if args.interval < 5 or (batch_id + 1) % (args.interval // 5) == 0:
                 progress.synchronize_between_processes(args.tpu) # synchronize the tensors across all tpus for every step
                 progress.display(batch_id + 1, args.tpu)
                 
