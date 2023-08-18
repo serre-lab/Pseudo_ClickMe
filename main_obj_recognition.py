@@ -415,6 +415,8 @@ def _mp_fn(index, args):
             xm.master_print('Epoch: [%d | %d]' % (epoch + 1, args.epochs))
         else:
             print('Epoch: [%d | %d]' % (epoch + 1, args.epochs))
+            
+        epoch_s = time.time()
 
         # train for one epoch
         train_acc, train_loss = train(train_loader, model, criterion, optimizer, epoch, args, global_rank)
@@ -439,6 +441,13 @@ def _mp_fn(index, args):
             'scheduler' : scheduler.state_dict(),
             'mode':args.mode
         }, is_best_acc, args, global_rank)
+        
+        epoch_e = time.time()
+        
+        if args.tpu:
+            xm.master_print("Epoch {}: {} seconds".format(str(epoch), str(epoch_e - epoch_s)))
+        else:
+            print("Epoch {}: {} seconds".format(str(epoch), str(epoch_e - epoch_s)))
         
         gc.collect()
 

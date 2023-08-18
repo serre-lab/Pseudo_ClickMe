@@ -77,7 +77,7 @@ class AverageMeter(object):
         self.sum = t[1]
         self.avg = self.sum / self.count
     
-def spearman_correlation(heatmaps_a, heatmaps_b):
+def spearman_correlation_np(heatmaps_a, heatmaps_b):
     """
     Computes the Spearman correlation between two sets of heatmaps.
 
@@ -107,6 +107,19 @@ def spearman_correlation(heatmaps_a, heatmaps_b):
     except:
         heatmaps_a = heatmaps_a.cpu().numpy()
         heatmaps_b = heatmaps_b.cpu().numpy()
+
+    for ha, hb in zip(heatmaps_a, heatmaps_b):
+        rho, _ = spearmanr(ha.flatten(), hb.flatten())
+        scores.append(rho)
+
+    return np.array(scores)
+
+def spearman_correlation(heatmaps_a, heatmaps_b):
+    assert heatmaps_a.shape == heatmaps_b.shape, "The two sets of heatmaps must" \
+                                                 "have the same shape."
+    assert len(heatmaps_a.shape) == 3, "The two sets of heatmaps must have shape (N, W, H)."
+
+    scores = []
 
     for ha, hb in zip(heatmaps_a, heatmaps_b):
         rho, _ = spearmanr(ha.flatten(), hb.flatten())
