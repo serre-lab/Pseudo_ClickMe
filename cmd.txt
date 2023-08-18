@@ -14,7 +14,7 @@ python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py  --tpu True 
 export TPU_NAME=harmonization-pseudo
 export XRT_TPU_CONFIG="localservice;0;localhost:51011"
 export XLA_USE_BF16=1 && export PYTHONUNBUFFERED=1
-python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py  --tpu True --tpu_cores_per_node 8 --batch_size 4 --interval 2 
+python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py  --tpu True --tpu_cores_per_node 8 --batch_size 4 --interval 10 
 python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py  --tpu True --tpu_cores_per_node 8 --batch_size 8 --interval 5 2>/dev/null
 
 export TPU_NAME=harmonization-pseudo
