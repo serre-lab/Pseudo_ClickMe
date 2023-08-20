@@ -426,28 +426,29 @@ def _mp_fn(index, args):
 
         # Update scheduler
         scheduler.step()
+        
+        epoch_e = time.time()
 
         # save model for best_acc model
         # if epoch < args.epochs // 2: continue
-        is_best_acc = val_acc > best_acc
-        best_acc = max(val_acc, best_acc)
-        save_checkpoint({
-            'epoch': epoch + 1,
-            "model_name": args.model_name,
-            'state_dict': model.state_dict(),
-            'acc': val_acc,
-            'best_acc': best_acc,
-            'optimizer': optimizer.state_dict(),
-            'scheduler' : scheduler.state_dict(),
-            'mode':args.mode
-        }, is_best_acc, args, global_rank)
-        
-        epoch_e = time.time()
+        if global_rank == 0:
+            is_best_acc = val_acc > best_acc
+            best_acc = max(val_acc, best_acc)
+            save_checkpoint({
+                'epoch': epoch + 1,
+                "model_name": args.model_name,
+                'state_dict': model.state_dict(),
+                'acc': val_acc,
+                'best_acc': best_acc,
+                'optimizer': optimizer.state_dict(),
+                'scheduler' : scheduler.state_dict(),
+                'mode':args.mode
+            }, is_best_acc, args, global_rank)
         
         if args.tpu:
-            xm.master_print("Epoch {}: {} seconds".format(str(epoch), str(epoch_e - epoch_s)))
+            xm.master_print("Epoch {}: {} seconds".format(str(epoch+1), str(epoch_e - epoch_s)))
         else:
-            print("Epoch {}: {} seconds".format(str(epoch), str(epoch_e - epoch_s)))
+            print("Epoch {}: {} seconds".format(str(epoch+1), str(epoch_e - epoch_s)))
         
         gc.collect()
 
