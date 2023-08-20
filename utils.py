@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from scipy.stats import spearmanr
 import torch.distributed as dist
+from torchmetrics.regression import SpearmanCorrCoef
 
 try:
     import torch_xla.core.xla_model as xm
@@ -120,12 +121,14 @@ def spearman_correlation(heatmaps_a, heatmaps_b):
     assert len(heatmaps_a.shape) == 3, "The two sets of heatmaps must have shape (N, W, H)."
 
     scores = []
+    batch_size = heatmaps_a.shape[0]
+    spearman = SpearmanCorrCoef(num_outputs=1)
+    heatmaps_a, heatmaps_b = heatmaps_a.reshape(batch_size, -1), heatmaps_b.reshape(batch_size, -1)
+    for i in range(batch_size):
+        score = spearman(heatmaps_a[i, :], heatmaps_b[i, :])
+        scores.append(score)
 
-    for ha, hb in zip(heatmaps_a, heatmaps_b):
-        rho, _ = spearmanr(ha.flatten(), hb.flatten())
-        scores.append(rho)
-
-    return np.array(scores)
+    return torch.tensor(scores)
 
 def compute_human_alignment(predicted_heatmaps, clickme_heatmaps):
     HUMAN_SPEARMAN_CEILING = 0.65753
@@ -136,7 +139,7 @@ def compute_human_alignment(predicted_heatmaps, clickme_heatmaps):
         predicted_heatmaps = predicted_heatmaps[:, 0, :, :]
 
     scores = spearman_correlation(predicted_heatmaps, clickme_heatmaps)
-    human_alignment = np.mean(scores) / HUMAN_SPEARMAN_CEILING
+    human_alignment = scores.mean() / HUMAN_SPEARMAN_CEILING
 
     return human_alignment
 

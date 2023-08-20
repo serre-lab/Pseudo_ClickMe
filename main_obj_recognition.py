@@ -428,7 +428,7 @@ def _mp_fn(index, args):
         scheduler.step()
 
         # save model for best_acc model
-        if epoch < args.epochs // 2: continue
+        # if epoch < args.epochs // 2: continue
         is_best_acc = val_acc > best_acc
         best_acc = max(val_acc, best_acc)
         save_checkpoint({
