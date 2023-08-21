@@ -256,6 +256,8 @@ def save_checkpoint(state, is_best_acc, args):
     xm.master_print("******************* Start Saving CKPT *******************")
         
     filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth.tar") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
+    
+    xm.master_print(filename)
     save_model(args.tpu, state, filename)
     if args.tpu:
         xm.master_print(filename, " is saved successfully!")
