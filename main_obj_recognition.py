@@ -236,9 +236,11 @@ def save_checkpoint(state, is_best_acc, args):
     
     def save_model(isXLA, state, filename):
         if isXLA:
-            xm.save(state, filename) # save ckpt on master process
+            xm.save(state, filename, global_master=True) # save ckpt on master process
         else: 
             torch.save(state, filename)
+            
+        return 
     
     if not os.path.exists(args.weights): 
         os.mkdir(args.weights)  # "/mnt/disks/bucket/pseudo_clickme/"
@@ -277,6 +279,7 @@ def save_checkpoint(state, is_best_acc, args):
             print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
             
     xm.master_print("******************* Finish Saving CKPT *******************")
+    return 
 
 def _mp_fn(index, args):
     global device
