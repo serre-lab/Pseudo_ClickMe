@@ -259,10 +259,10 @@ def save_checkpoint(state, is_best_acc, args):
         best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
         save_model(args.tpu, state, best_filename)
         
-    # rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
-    # if global_rank == 0 and os.path.exists(rmfile):
-    #     xm.master_print("to be removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
-    #     os.remove(rmfile)
+    rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
+    if global_rank == 0 and os.path.exists(rmfile):
+        xm.master_print("to be removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
+        os.remove(rmfile)
 
 def _mp_fn(index, args):
     global device
@@ -428,6 +428,8 @@ def _mp_fn(index, args):
         scheduler.step()
         
         epoch_e = time.time()
+        
+        # xm.master_print("******************* Train & Val Finished *******************")
 
         # save model for best_acc model
         # if epoch < args.epochs // 2: continue
@@ -444,13 +446,15 @@ def _mp_fn(index, args):
                 'scheduler' : scheduler.state_dict(),
                 'mode':args.mode
             }, is_best_acc, args)
+            
+        # xm.master_print("******************* Train & Val Finished *******************")
         
         if args.tpu:
             xm.master_print("Epoch {}: {} seconds".format(str(epoch+1), str(epoch_e - epoch_s)))
         else:
             print("Epoch {}: {} seconds".format(str(epoch+1), str(epoch_e - epoch_s)))
         
-        gc.collect()
+        # gc.collect()
 
 if __name__ == '__main__':
     # create the command line parser
