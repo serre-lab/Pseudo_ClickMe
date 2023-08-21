@@ -253,16 +253,26 @@ def save_checkpoint(state, is_best_acc, args):
         
     filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth.tar") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
     save_model(args.tpu, state, filename)
+    if isXLA:
+        xm.master_print(filename, " is saved successfully!")
+    else:
+        print(filename, " is saved successfully!")
     
     if is_best_acc:
-        xm.master_print("is best", str(state['epoch']))
         best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
         save_model(args.tpu, state, best_filename)
+        if isXLA:
+            xm.master_print("Is best ", str(state['epoch']))
+        else:
+            print("Is best ", str(state['epoch']))
         
     rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
     if global_rank == 0 and os.path.exists(rmfile):
-        xm.master_print("to be removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
         os.remove(rmfile)
+        if isXLA:
+            xm.master_print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
+        else:
+            print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
 
 def _mp_fn(index, args):
     global device
@@ -429,7 +439,7 @@ def _mp_fn(index, args):
         
         epoch_e = time.time()
         
-        # xm.master_print("******************* Train & Val Finished *******************")
+        xm.master_print("******************* Train & Val Finished *******************")
 
         # save model for best_acc model
         # if epoch < args.epochs // 2: continue
@@ -447,7 +457,7 @@ def _mp_fn(index, args):
                 'mode':args.mode
             }, is_best_acc, args)
             
-        # xm.master_print("******************* Train & Val Finished *******************")
+        xm.master_print("******************* Train & Val Finished *******************")
         
         if args.tpu:
             xm.master_print("Epoch {}: {} seconds".format(str(epoch+1), str(epoch_e - epoch_s)))
