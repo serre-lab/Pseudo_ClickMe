@@ -259,10 +259,10 @@ def save_checkpoint(state, is_best_acc, args):
         best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
         save_model(args.tpu, state, best_filename)
         
-    rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
-    if global_rank == 0 and os.path.exists(rmfile):
-        xm.master_print("to be removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
-        os.remove(rmfile)
+    # rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
+    # if global_rank == 0 and os.path.exists(rmfile):
+    #     xm.master_print("to be removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
+    #     os.remove(rmfile)
 
 def _mp_fn(index, args):
     global device
