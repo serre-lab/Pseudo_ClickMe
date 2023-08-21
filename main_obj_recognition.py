@@ -251,9 +251,11 @@ def save_checkpoint(state, is_best_acc, args):
     if not os.path.exists(save_dir): 
         os.mkdir(save_dir)
         
+    xm.master_print("******************* Start Saving CKPT *******************")
+        
     filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth.tar") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
     save_model(args.tpu, state, filename)
-    if isXLA:
+    if args.tpu:
         xm.master_print(filename, " is saved successfully!")
     else:
         print(filename, " is saved successfully!")
@@ -261,7 +263,7 @@ def save_checkpoint(state, is_best_acc, args):
     if is_best_acc:
         best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
         save_model(args.tpu, state, best_filename)
-        if isXLA:
+        if args.tpu:
             xm.master_print("Is best ", str(state['epoch']))
         else:
             print("Is best ", str(state['epoch']))
@@ -269,10 +271,12 @@ def save_checkpoint(state, is_best_acc, args):
     rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
     if global_rank == 0 and os.path.exists(rmfile):
         os.remove(rmfile)
-        if isXLA:
+        if args.tpu:
             xm.master_print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
         else:
             print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
+            
+    xm.master_print("******************* Finish Saving CKPT *******************")
 
 def _mp_fn(index, args):
     global device
@@ -457,7 +461,7 @@ def _mp_fn(index, args):
                 'mode':args.mode
             }, is_best_acc, args)
             
-        xm.master_print("******************* Train & Val Finished *******************")
+        xm.master_print("******************* Save CKPT Finished *******************")
         
         if args.tpu:
             xm.master_print("Epoch {}: {} seconds".format(str(epoch+1), str(epoch_e - epoch_s)))
