@@ -222,7 +222,7 @@ def test(test_loader, model, criterion, args, global_rank):
                 
     return top1.avg, losses.avg
 
-def save_checkpoint(state, is_best_acc, args, global_rank):
+def save_checkpoint(state, is_best_acc, args):
     '''
     /mnt/disks/bucket/pseudo_clickme/
     |__resnet50
@@ -236,7 +236,7 @@ def save_checkpoint(state, is_best_acc, args, global_rank):
     
     def save_model(isXLA, state, filename):
         if isXLA:
-            xm.save(state, filename, global_master=True) # save ckpt on master process
+            xm.save(state, filename) # save ckpt on master process
         else: 
             torch.save(state, filename)
     
@@ -443,7 +443,7 @@ def _mp_fn(index, args):
                 'optimizer': optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict(),
                 'mode':args.mode
-            }, is_best_acc, args, global_rank)
+            }, is_best_acc, args)
         
         if args.tpu:
             xm.master_print("Epoch {}: {} seconds".format(str(epoch+1), str(epoch_e - epoch_s)))
