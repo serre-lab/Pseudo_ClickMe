@@ -5,6 +5,10 @@ from scipy.stats import spearmanr
 import torch.distributed as dist
 from torchmetrics.regression import SpearmanCorrCoef
 
+from google.cloud import storage
+from google.cloud.storage.bucket import Bucket
+from google.cloud.storage.blob import Blob
+
 try:
     import torch_xla.core.xla_model as xm
     import torch_xla.distributed.xla_multiprocessing as xmp
@@ -177,4 +181,84 @@ class str2bool(argparse.Action):
             setattr(namespace, self.dest, False)
         else:
             raise argparse.ArgumentTypeError(f"Invalid value for {self.dest}: {values}")
+  
+def save_model(isXLA, state, filename):
+    if isXLA:
+        xm.master_print(filename)
+        xm.save(state, filename, global_master=True) # save ckpt on master process
+        xm.master_print(filename, " saved")
+    else: 
+        torch.save(state, filename)
+          
+def save_checkpoint(state, is_best_acc, args):
+    '''
+    /mnt/disks/bucket/pseudo_clickme/
+    |__resnet50
+    |    |__imagenet
+    |    |    |__ckpt_0.pth
+    |    |    |__best.pth
+    |    |__mix
+    |    |__pseudo
+    |...
+    ''' 
+    
+    # if not os.path.exists(args.weights): 
+    #     os.mkdir(args.weights)  
+    pathlib.Path(args.weights).mkdir(parents=True, exist_ok=True) # "/mnt/disks/bucket/pseudo_clickme/"
+        
+    model_dir = os.path.join(args.weights, args.model_name) # "/mnt/disks/bucket/pseudo_clickme/resnet50"
+    pathlib.Path(model_dir).mkdir(parents=True, exist_ok=True)
+    # if not os.path.exists(model_dir): 
+    #     os.mkdir(model_dir)
+        
+    save_dir = os.path.join(model_dir, state['mode']) # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/"
+    pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
+    # if not os.path.exists(save_dir): 
+    #     os.mkdir(save_dir)
+        
+    xm.master_print("******************* Start Saving CKPT *******************")
+        
+    filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth.tar") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
+    
+    save_model(args.tpu, state, filename)
+    if args.tpu:
+        xm.master_print(filename, " is saved successfully!")
+    else:
+        print(filename, " is saved successfully!")
+    
+    if is_best_acc:
+        best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
+        save_model(args.tpu, state, best_filename)
+        if args.tpu:
+            xm.master_print("Is best ", str(state['epoch']))
+        else:
+            print("Is best ", str(state['epoch']))
+        
+    rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
+    if global_rank == 0 and os.path.exists(rmfile):
+        os.remove(rmfile)
+        if args.tpu:
+            xm.master_print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
+        else:
+            print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
+            
+    xm.master_print("******************* Finish Saving CKPT *******************")
+    return 
+
+"""Uploads a file to GCS bucket"""
+def _upload_blob_gcs(gcs_uri, source_file_name, destination_blob_name):
+    client = storage.Client()
+    blob = Blob.from_string(os.path.join(gcs_uri, destination_blob_name))
+    blob.bucket._client = client
+    blob.upload_from_filename(source_file_name)
+    
+    xm.master_print("Saved Model Checkpoint file {} and uploaded to {}.".format(source_file_name, os.path.join(gcs_uri, destination_blob_name)))
+
+"""Downloads a file from GCS to local directory"""  
+def _read_blob_gcs(BUCKET, CHKPT_FILE, DESTINATION):
+
+    client = storage.Client()
+    bucket = client.get_bucket(BUCKET)
+    blob = bucket.get_blob(CHKPT_FILE)
+    blob.download_to_filename(DESTINATION)
 

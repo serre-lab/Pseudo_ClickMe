@@ -5,6 +5,7 @@ import shutil
 import time
 import glob
 from itertools import chain
+import pathlib
 import gc
 import warnings
 warnings.filterwarnings('ignore')
@@ -222,68 +223,6 @@ def test(test_loader, model, criterion, args, global_rank):
                 
     return top1.avg, losses.avg
 
-def save_checkpoint(state, is_best_acc, args):
-    '''
-    /mnt/disks/bucket/pseudo_clickme/
-    |__resnet50
-    |    |__imagenet
-    |    |    |__ckpt_0.pth
-    |    |    |__best.pth
-    |    |__mix
-    |    |__pseudo
-    |...
-    '''
-    
-    def save_model(isXLA, state, filename):
-        if isXLA:
-            xm.master_print(filename)
-            xm.save(state, filename, global_master=True) # save ckpt on master process
-            xm.master_print(filename, " saved")
-        else: 
-            torch.save(state, filename)
-            
-        return 
-    
-    if not os.path.exists(args.weights): 
-        os.mkdir(args.weights)  # "/mnt/disks/bucket/pseudo_clickme/"
-        
-    model_dir = os.path.join(args.weights, args.model_name) # "/mnt/disks/bucket/pseudo_clickme/resnet50"
-    if not os.path.exists(model_dir): 
-        os.mkdir(model_dir)
-        
-    save_dir = os.path.join(model_dir, state['mode']) # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/"
-    if not os.path.exists(save_dir): 
-        os.mkdir(save_dir)
-        
-    xm.master_print("******************* Start Saving CKPT *******************")
-        
-    filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth.tar") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
-    
-    save_model(args.tpu, state, filename)
-    if args.tpu:
-        xm.master_print(filename, " is saved successfully!")
-    else:
-        print(filename, " is saved successfully!")
-    
-    if is_best_acc:
-        best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
-        save_model(args.tpu, state, best_filename)
-        if args.tpu:
-            xm.master_print("Is best ", str(state['epoch']))
-        else:
-            print("Is best ", str(state['epoch']))
-        
-    rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
-    if global_rank == 0 and os.path.exists(rmfile):
-        os.remove(rmfile)
-        if args.tpu:
-            xm.master_print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
-        else:
-            print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
-            
-    xm.master_print("******************* Finish Saving CKPT *******************")
-    return 
-
 def _mp_fn(index, args):
     global device
     global best_acc
@@ -364,6 +303,7 @@ def _mp_fn(index, args):
                     .format(args.resume, checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
+            return
 
     # Dataset Initialization
     if args.evaluate:
