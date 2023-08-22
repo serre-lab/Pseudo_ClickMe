@@ -236,7 +236,9 @@ def save_checkpoint(state, is_best_acc, args):
     
     def save_model(isXLA, state, filename):
         if isXLA:
+            xm.master_print(filename)
             xm.save(state, filename, global_master=True) # save ckpt on master process
+            xm.master_print(filename, " saved")
         else: 
             torch.save(state, filename)
             
@@ -257,7 +259,6 @@ def save_checkpoint(state, is_best_acc, args):
         
     filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth.tar") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
     
-    xm.master_print(filename)
     save_model(args.tpu, state, filename)
     if args.tpu:
         xm.master_print(filename, " is saved successfully!")
