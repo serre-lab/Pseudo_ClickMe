@@ -413,7 +413,7 @@ def _mp_fn(index, args):
         train_dataset, 
         batch_size = args.batch_size, 
         num_workers = args.num_workers,
-        pin_memory = True,
+        pin_memory = False,
         sampler = train_sampler,
         drop_last = True # DataParallel cores must run the same number of batches each, and only full batches are allowed.
     )
@@ -421,7 +421,7 @@ def _mp_fn(index, args):
         val_dataset, 
         batch_size = args.batch_size, 
         num_workers = args.num_workers, 
-        pin_memory = True,
+        pin_memory = False,
         sampler = val_sampler,
         drop_last = True
     )
