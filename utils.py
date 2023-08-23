@@ -186,7 +186,7 @@ class str2bool(argparse.Action):
             raise argparse.ArgumentTypeError(f"Invalid value for {self.dest}: {values}")
   
 def save_model(isXLA, state, filename):
-    if isXLA:
+    if isXLA and is_main_process():
         xm.save(state, filename, global_master=True) # save ckpt on master process
         return 
     else: 
@@ -217,7 +217,11 @@ def save_checkpoint(state, is_best_acc, args):
         
     filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth.tar") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
     
-    save_model(args.tpu, state, filename)
+    if is_main_process():
+        save_model(args.tpu, state, filename)
+    else:
+        xm.master_print("Not a main Process!")
+        
     if args.tpu:
         xm.master_print(filename, " is saved successfully!")
     else:
