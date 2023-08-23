@@ -14,6 +14,7 @@ sudo pip3 install timm==0.9.0
 sudo pip3 install wandb==0.15.0
 sudo pip3 install torchmetrics==1.0.1
 sudo pip3 install torchattacks
+sudo pip3 install pathlib
 
 sleep 5
 python3 -m wandb login 486f67137c1b6905ac11b8caaaf6ecb276bfdf8e
