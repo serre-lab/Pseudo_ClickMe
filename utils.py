@@ -164,8 +164,8 @@ def get_rank(isXLA):
         return 0
     return torch.distributed.get_rank()
 
-def is_main_process():
-    return get_rank() == 0
+def is_main_process(isXLA):
+    return get_rank(isXLA) == 0
 
 def is_dist_avail_and_initialized(isXLA):
     if isXLA:
@@ -185,15 +185,15 @@ class str2bool(argparse.Action):
         else:
             raise argparse.ArgumentTypeError(f"Invalid value for {self.dest}: {values}")
   
-def save_model(isXLA, state, filename):
-    if isXLA and is_main_process():
+def save_model(args, state, filename):
+    if args.tpu and is_main_process(args.tpu):
         xm.save(state, filename, global_master=True) # save ckpt on master process
         return 
     else: 
         torch.save(state, filename)
     return
        
-def save_checkpoint(state, is_best_acc, args):
+def save_checkpoint(state, is_best_acc, global_rank, args):
     '''
     /mnt/disks/bucket/pseudo_clickme/
     |__resnet50
@@ -217,8 +217,8 @@ def save_checkpoint(state, is_best_acc, args):
         
     filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth.tar") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
     
-    if is_main_process():
-        save_model(args.tpu, state, filename)
+    if is_main_process(args.tpu):
+        save_model(args, state, filename)
     else:
         xm.master_print("Not a main Process!")
         
@@ -229,7 +229,7 @@ def save_checkpoint(state, is_best_acc, args):
     
     if is_best_acc:
         best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
-        save_model(args.tpu, state, best_filename)
+        save_model(args, state, best_filename)
         if args.tpu:
             xm.master_print("Is best: ", str(state['epoch']))
         else:

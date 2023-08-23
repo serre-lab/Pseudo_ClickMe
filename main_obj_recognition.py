@@ -407,7 +407,7 @@ def _mp_fn(index, args):
                 'optimizer': optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict(),
                 'mode':args.mode
-            }, is_best_acc, args)
+            }, is_best_acc, global_rank, args)
             
         xm.master_print("******************* Save CKPT Finished *******************")
         
