@@ -62,6 +62,7 @@ def broadcast_xla_master_model_param(model, args):
     xm.all_reduce(xm.REDUCE_SUM, parameters_and_buffers)
     xm.mark_step()
     xm.rendezvous("broadcast_xla_master_model_param")
+    return 
 
 def _xla_logging(logger, value, batch_size, args, global_rank, var_name=None):
     val = value.item()
@@ -69,6 +70,7 @@ def _xla_logging(logger, value, batch_size, args, global_rank, var_name=None):
     
     if global_rank == 0 and args.wandb and var_name != None: # just update values on the main process
         wandb.log({var_name: val})
+    return 
 
 def train(train_loader, model, criterion, optimizer, epoch, args, global_rank):
     batch_time = AverageMeter('Time', ':6.3f')
@@ -415,6 +417,7 @@ def _mp_fn(index, args):
             print("Epoch {}: {} seconds".format(str(epoch+1), str(epoch_e - epoch_s)))
         
         # gc.collect()
+    return
 
 if __name__ == '__main__':
     # create the command line parser

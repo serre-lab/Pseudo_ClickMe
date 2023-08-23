@@ -28,6 +28,7 @@ class ProgressMeter(object):
             xm.master_print('  '.join(entries))
         else:
             print('  '.join(entries))
+        return 
 
     def _get_batch_fmtstr(self, num_batches):
         num_digits = len(str(num_batches // 1))
@@ -37,6 +38,7 @@ class ProgressMeter(object):
     def synchronize_between_processes(self, isXLA):
         for meter in self.meters:
             meter.synchronize_between_processes(isXLA)
+        return
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -51,12 +53,14 @@ class AverageMeter(object):
         self.avg = 0
         self.sum = 0
         self.count = 0
+        return
 
     def update(self, val, n=1):
         self.val = val
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+        return
 
     def __str__(self):
         fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
@@ -79,6 +83,7 @@ class AverageMeter(object):
         self.count = int(t[0])
         self.sum = t[1]
         self.avg = self.sum / self.count
+        return
     
 def spearman_correlation_np(heatmaps_a, heatmaps_b):
     """
@@ -183,9 +188,11 @@ class str2bool(argparse.Action):
 def save_model(isXLA, state, filename):
     if isXLA:
         xm.save(state, filename, global_master=True) # save ckpt on master process
+        return 
     else: 
         torch.save(state, filename)
-          
+    return
+       
 def save_checkpoint(state, is_best_acc, args):
     '''
     /mnt/disks/bucket/pseudo_clickme/
@@ -197,20 +204,14 @@ def save_checkpoint(state, is_best_acc, args):
     |    |__pseudo
     |...
     ''' 
-    
-    # if not os.path.exists(args.weights): 
-    #     os.mkdir(args.weights)  
+     
     pathlib.Path(args.weights).mkdir(parents=True, exist_ok=True) # "/mnt/disks/bucket/pseudo_clickme/"
         
     model_dir = os.path.join(args.weights, args.model_name) # "/mnt/disks/bucket/pseudo_clickme/resnet50"
     pathlib.Path(model_dir).mkdir(parents=True, exist_ok=True)
-    # if not os.path.exists(model_dir): 
-    #     os.mkdir(model_dir)
         
     save_dir = os.path.join(model_dir, state['mode']) # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/"
     pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
-    # if not os.path.exists(save_dir): 
-    #     os.mkdir(save_dir)
         
     xm.master_print("******************* Start Saving CKPT *******************")
         
@@ -249,6 +250,7 @@ def _upload_blob_gcs(gcs_uri, source_file_name, destination_blob_name):
     blob.upload_from_filename(source_file_name)
     
     xm.master_print("Saved Model Checkpoint file {} and uploaded to {}.".format(source_file_name, os.path.join(gcs_uri, destination_blob_name)))
+    return
 
 """Downloads a file from GCS to local directory"""  
 def _read_blob_gcs(BUCKET, CHKPT_FILE, DESTINATION):
@@ -257,4 +259,5 @@ def _read_blob_gcs(BUCKET, CHKPT_FILE, DESTINATION):
     bucket = client.get_bucket(BUCKET)
     blob = bucket.get_blob(CHKPT_FILE)
     blob.download_to_filename(DESTINATION)
+    return
 
