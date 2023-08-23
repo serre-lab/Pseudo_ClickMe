@@ -5,10 +5,6 @@ from scipy.stats import spearmanr
 import torch.distributed as dist
 from torchmetrics.regression import SpearmanCorrCoef
 
-from google.cloud import storage
-from google.cloud.storage.bucket import Bucket
-from google.cloud.storage.blob import Blob
-
 try:
     import torch_xla.core.xla_model as xm
     import torch_xla.distributed.xla_multiprocessing as xmp
