@@ -396,7 +396,7 @@ def _mp_fn(index, args):
         if global_rank == 0:
             is_best_acc = val_acc > best_acc
             best_acc = max(val_acc, best_acc)
-            save_checkpoint({
+            utils.save_checkpoint({
                 'epoch': epoch + 1,
                 "model_name": args.model_name,
                 'state_dict': model.state_dict(),

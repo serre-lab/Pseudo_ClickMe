@@ -180,9 +180,7 @@ class str2bool(argparse.Action):
   
 def save_model(isXLA, state, filename):
     if isXLA:
-        xm.master_print(filename)
         xm.save(state, filename, global_master=True) # save ckpt on master process
-        xm.master_print(filename, " saved")
     else: 
         torch.save(state, filename)
           
@@ -226,7 +224,7 @@ def save_checkpoint(state, is_best_acc, args):
         best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
         save_model(args.tpu, state, best_filename)
         if args.tpu:
-            xm.master_print("Is best ", str(state['epoch']))
+            xm.master_print("Is best: ", str(state['epoch']))
         else:
             print("Is best ", str(state['epoch']))
         
