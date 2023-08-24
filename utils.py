@@ -236,7 +236,7 @@ def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
         if args.tpu:
             xm.master_print("Is best: ", str(epoch))
         else:
-            print("Is best ", str(state['epoch']))
+            print("Is best ", str(epoch))
         
     rmfile = os.path.join(save_dir, "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
     if global_rank == 0 and os.path.exists(rmfile):
@@ -244,7 +244,7 @@ def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
         if args.tpu:
             xm.master_print("Removed ", "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
         else:
-            print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
+            print("Removed ", "ckpt_" + str(str(epoch) - args.ckpt_remain) + ".pth.tar")
     
     if args.tpu:      
         xm.master_print("******************* Finish Saving CKPT *******************")

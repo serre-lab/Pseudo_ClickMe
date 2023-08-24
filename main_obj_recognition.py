@@ -229,6 +229,7 @@ def _mp_fn(index, args):
     global device
     global best_acc
     
+    best_acc = 0
     global_rank = utils.get_rank(args.tpu)
     
     # enable wandb
@@ -408,7 +409,7 @@ def _mp_fn(index, args):
                 'optimizer': optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict(),
                 'mode':args.mode
-            }, is_best_acc, epoch, global_rank, args)
+            }, is_best_acc, epoch+1, global_rank, args)
         
         if args.tpu: 
             xm.master_print("******************* Save CKPT Finished *******************")
