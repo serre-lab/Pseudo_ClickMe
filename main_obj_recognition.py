@@ -398,18 +398,16 @@ def _mp_fn(index, args):
         if global_rank == 0:
             is_best_acc = val_acc > best_acc
             best_acc = max(val_acc, best_acc)
-            # utils.save_checkpoint({
-            #     'epoch': epoch + 1,
-            #     "model_name": args.model_name,
-            #     'state_dict': model.state_dict(),
-            #     'acc': val_acc,
-            #     'best_acc': best_acc,
-            #     'optimizer': optimizer.state_dict(),
-            #     'scheduler' : scheduler.state_dict(),
-            #     'mode':args.mode
-            # }, is_best_acc, global_rank, args)
-            utils.save_checkpoint(
-                model.state_dict(), is_best_acc, global_rank, epoch + 1, args)
+            utils.save_checkpoint({
+                'epoch': epoch + 1,
+                "model_name": args.model_name,
+                'state_dict': model.state_dict(),
+                'acc': val_acc,
+                'best_acc': best_acc,
+                'optimizer': optimizer.state_dict(),
+                'scheduler' : scheduler.state_dict(),
+                'mode':args.mode
+            }, is_best_acc, epoch, global_rank, args)
             
         xm.master_print("******************* Save CKPT Finished *******************")
         

@@ -193,7 +193,7 @@ def save_model(args, state, filename):
         torch.save(state, filename)
     return
        
-def save_checkpoint(state, is_best_acc, global_rank, epoch, args):
+def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
     '''
     /mnt/disks/bucket/pseudo_clickme/
     |__resnet50
@@ -210,13 +210,11 @@ def save_checkpoint(state, is_best_acc, global_rank, epoch, args):
     model_dir = os.path.join(args.weights, args.model_name) # "/mnt/disks/bucket/pseudo_clickme/resnet50"
     pathlib.Path(model_dir).mkdir(parents=True, exist_ok=True)
         
-    # save_dir = os.path.join(model_dir, state['mode']) # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/"
-    save_dir = os.path.join(model_dir, args.mode)
+    save_dir = os.path.join(model_dir, args.mode) # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/"
     pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
         
     xm.master_print("******************* Start Saving CKPT *******************")
         
-    # filename = os.path.join(save_dir, "ckpt_" + str(state['epoch']) + ".pth.tar") # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/ckpt_#.pth""
     filename = os.path.join(save_dir, "ckpt_" + str(epoch) + ".pth.tar")
     
     if is_main_process(args.tpu):
@@ -233,17 +231,14 @@ def save_checkpoint(state, is_best_acc, global_rank, epoch, args):
         best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
         save_model(args, state, best_filename)
         if args.tpu:
-            # xm.master_print("Is best: ", str(state['epoch']))
             xm.master_print("Is best: ", str(epoch))
         else:
             print("Is best ", str(state['epoch']))
         
-    # rmfile = os.path.join(save_dir, "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
     rmfile = os.path.join(save_dir, "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
     if global_rank == 0 and os.path.exists(rmfile):
         os.remove(rmfile)
         if args.tpu:
-            # xm.master_print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
             xm.master_print("Removed ", "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
         else:
             print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
