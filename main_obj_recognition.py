@@ -412,6 +412,11 @@ def _mp_fn(index, args):
             }, is_best_acc, epoch+1, global_rank, args)
         
         if args.tpu: 
+            xm.master_print(val_acc, best_acc)
+        else:
+            print(val_acc, best_acc)
+        
+        if args.tpu: 
             xm.master_print("******************* Save CKPT Finished *******************")
         
         if args.tpu:
