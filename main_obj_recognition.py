@@ -107,9 +107,9 @@ def train(train_loader, model, criterion, optimizer, epoch, args, global_rank):
             top5.update(acc5[0].item(), images.size(0))
         else:
             if args.epochs <= args.logger_update or (batch_id + 1) % args.logger_update == 0: # otherwise, passing values from TPU to CPU will be very slow
-                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), global_rank, "training_loss"))
-                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), global_rank, "top1_acc_train"))
-                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), global_rank, "top5_acc_train"))
+                xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, global_rank, "training_loss"))
+                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc_train"))
+                xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, global_rank, "top5_acc_train"))
             # xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, global_rank, "training_loss"))
             # xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc_train"))
             # xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, global_rank, "top5_acc_train"))
