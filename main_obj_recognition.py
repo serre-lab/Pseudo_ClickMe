@@ -161,6 +161,7 @@ def validate(val_loader, model, criterion, args, global_rank):
 
             # measure accuracy and record loss
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            print(output.shape, target.shape)
             print(acc1, acc5)
             if args.tpu != True:
                 losses.update(loss.item(), images.size(0))
