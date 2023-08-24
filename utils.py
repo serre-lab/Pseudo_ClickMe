@@ -212,8 +212,9 @@ def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
         
     save_dir = os.path.join(model_dir, args.mode) # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/"
     pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
-        
-    xm.master_print("******************* Start Saving CKPT *******************")
+    
+    if args.tpu:
+        xm.master_print("******************* Start Saving CKPT *******************")
         
     filename = os.path.join(save_dir, "ckpt_" + str(epoch) + ".pth.tar")
     
@@ -242,8 +243,9 @@ def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
             xm.master_print("Removed ", "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
         else:
             print("Removed ", "ckpt_" + str(state['epoch'] - args.ckpt_remain) + ".pth.tar")
-            
-    xm.master_print("******************* Finish Saving CKPT *******************")
+    
+    if args.tpu:      
+        xm.master_print("******************* Finish Saving CKPT *******************")
     return 
 
 """Uploads a file to GCS bucket"""

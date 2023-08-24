@@ -391,7 +391,8 @@ def _mp_fn(index, args):
         
         epoch_e = time.time()
         
-        xm.master_print("******************* Train & Val Finished *******************")
+        if args.tpu:
+            xm.master_print("******************* Train & Val Finished *******************")
 
         # save model for best_acc model
         # if epoch < args.epochs // 2: continue
@@ -408,8 +409,9 @@ def _mp_fn(index, args):
                 'scheduler' : scheduler.state_dict(),
                 'mode':args.mode
             }, is_best_acc, epoch, global_rank, args)
-            
-        xm.master_print("******************* Save CKPT Finished *******************")
+        
+        if args.tpu: 
+            xm.master_print("******************* Save CKPT Finished *******************")
         
         if args.tpu:
             xm.master_print("Epoch {}: {} seconds".format(str(epoch+1), str(epoch_e - epoch_s)))
