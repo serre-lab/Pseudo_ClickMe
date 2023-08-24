@@ -184,12 +184,14 @@ class str2bool(argparse.Action):
             raise argparse.ArgumentTypeError(f"Invalid value for {self.dest}: {values}")
   
 def save_model(args, state, filename):
-    if args.tpu and is_main_process(args.tpu):
-        xm.save(args, state, filename, global_master=True) # save ckpt on master process
-        return 
-    else: 
+    # if args.tpu and is_main_process(args.tpu):
+    #     xm.save(args, state, filename, master_only=True, global_master=False) # save ckpt on master process
+    #     return 
+    # else: 
+    #     torch.save(state, filename)
+    # return
+    if is_main_process(args.tpu):
         torch.save(state, filename)
-    return
        
 def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
     '''
