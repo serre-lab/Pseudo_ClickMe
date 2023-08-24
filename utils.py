@@ -185,7 +185,7 @@ class str2bool(argparse.Action):
   
 def save_model(args, state, filename):
     if args.tpu and is_main_process(args.tpu):
-        xm.save(state, filename, global_master=True) # save ckpt on master process
+        xm.save(args, state, filename, global_master=True) # save ckpt on master process
         return 
     else: 
         torch.save(state, filename)

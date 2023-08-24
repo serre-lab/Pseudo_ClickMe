@@ -410,12 +410,7 @@ def _mp_fn(index, args):
                 'scheduler' : scheduler.state_dict(),
                 'mode':args.mode
             }, is_best_acc, epoch+1, global_rank, args)
-        
-        if args.tpu: 
-            xm.master_print(val_acc, best_acc, val_loss, train_acc, train_loss)
-        else:
-            print(val_acc, best_acc, val_loss, train_acc, train_loss)
-        
+
         if args.tpu: 
             xm.master_print("******************* Save CKPT Finished *******************")
         
