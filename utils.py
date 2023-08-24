@@ -215,6 +215,8 @@ def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
     
     if args.tpu:
         xm.master_print("******************* Start Saving CKPT *******************")
+    else:
+        print("******************* Start Saving CKPT *******************")
         
     filename = os.path.join(save_dir, "ckpt_" + str(epoch) + ".pth.tar")
     
@@ -246,6 +248,9 @@ def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
     
     if args.tpu:      
         xm.master_print("******************* Finish Saving CKPT *******************")
+    else:
+        print("******************* Finish Saving CKPT *******************")
+    
     return 
 
 """Uploads a file to GCS bucket"""
