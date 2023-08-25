@@ -244,18 +244,13 @@ def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
     filename = os.path.join(save_dir, "ckpt_" + str(epoch) + ".pth.tar")
     save_model(args, state, filename)
  
-    if args.tpu:
-        xm.master_print("Is this ckpt best? ", is_best_acc)
-    else:
-        print("Is this ckpt best? ", is_best_acc)
-    
     if is_best_acc:
         best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
         save_model(args, state, best_filename)
         if args.tpu:
-            xm.master_print("The best model is at ", str(epoch))
+            xm.master_print("The best model is saved at EPOCH", str(epoch))
         else:
-            print("The best model is at ", str(epoch))
+            print("The best model is saved at EPOCH", str(epoch))
         
     rmfile = os.path.join(save_dir, "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
     if global_rank == 0 and os.path.exists(rmfile):

@@ -400,7 +400,7 @@ def _mp_fn(index, args):
 
         # save model for best_acc model
         # if epoch < args.epochs // 2: continue
-        xm.master_print("Current Rank is: ", utils.get_rank(args.tpu))
+        # xm.master_print("Current Rank is: ", utils.get_rank(args.tpu))
         is_best_acc = val_acc > best_acc
         best_acc = max(val_acc, best_acc)
         
@@ -545,7 +545,6 @@ if __name__ == '__main__':
     if args.wandb:
         wandb.finish()  # [optional] finish the wandb run, necessary in notebooks
         
-    print("****************************** DONE! ******************************")
     end_time = time.time()
     print('Total hours: ', round((end_time - start_time) / 3600, 1))
     print("****************************** DONE! ******************************")
