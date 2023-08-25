@@ -196,6 +196,7 @@ def setup_for_distributed(args, is_master):
     This function disables printing when not in master process
     """
     builtin_print = builtins.print
+    isTPU = args.tpu
     
     def print(*args, **kwargs):
         force = kwargs.pop('force', False)
@@ -204,7 +205,7 @@ def setup_for_distributed(args, is_master):
             if is_master:
                 builtin_print(*args, **kwargs)
             return
-        force = force or (not args.tpu and get_world_size(args.tpu) > 8)
+        force = force or (not isTPU and get_world_size(args.tpu) > 8)
         if is_master or force:
             now = datetime.datetime.now().time()
             builtin_print('[{}] '.format(now), end='')  # print with time stamp
