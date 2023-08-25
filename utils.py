@@ -187,19 +187,16 @@ class str2bool(argparse.Action):
 def init_distributed_mode(args):
     print("Init distributed mode")
     if args.tpu:
-        args.rank = xm.get_ordinal()
-        args.distributed = True
-        setup_for_distributed(args)
+        is_master = xm.get_ordinal()
+        setup_for_distributed(args, is_master==0)
         return
     
-def setup_for_distributed(args):
+def setup_for_distributed(args, is_master):
     """
     This function disables printing when not in master process
     """
     builtin_print = builtins.print
     
-    is_master = args.rank == 0
-
     def print(*args, **kwargs):
         force = kwargs.pop('force', False)
         if args == ('torch_xla.core.xla_model::mark_step',):
