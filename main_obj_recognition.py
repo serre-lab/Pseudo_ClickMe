@@ -227,7 +227,7 @@ def test(test_loader, model, criterion, args, global_rank):
 
 def _mp_fn(index, args):
     
-    utils.init_distributed_mode(args)
+    # utils.init_distributed_mode(args)
     
     global device
     global best_acc
@@ -396,24 +396,27 @@ def _mp_fn(index, args):
         epoch_e = time.time()
         
         if args.tpu:
-            xm.master_print("******************* Train & Val Finished *******************")
+            xm.master_print("******************* Save CKPT Started *******************")
 
         # save model for best_acc model
         # if epoch < args.epochs // 2: continue
-        if global_rank == 0:
-            xm.master_print("Current Rank is: ", utils.get_rank(args.tpu))
-            is_best_acc = val_acc > best_acc
-            best_acc = max(val_acc, best_acc)
-            utils.save_checkpoint({
-                'epoch': epoch + 1,
-                "model_name": args.model_name,
-                'state_dict': model.state_dict(),
-                'acc': val_acc,
-                'best_acc': best_acc,
-                'optimizer': optimizer.state_dict(),
-                'scheduler' : scheduler.state_dict(),
-                'mode':args.mode
-            }, is_best_acc, epoch+1, global_rank, args)
+        xm.master_print("Current Rank is: ", utils.get_rank(args.tpu))
+        is_best_acc = val_acc > best_acc
+        best_acc = max(val_acc, best_acc)
+        
+        # no need to check whether the process is main. Torch_XLA automatically does that for us
+        # rendezvous in xm.save() makes sure all the processes are at the same stage
+        # if process A is at here, it will wait for other processes until here. 
+        utils.save_checkpoint({
+            'epoch': epoch + 1,
+            "model_name": args.model_name,
+            'state_dict': model.state_dict(),
+            'acc': val_acc,
+            'best_acc': best_acc,
+            'optimizer': optimizer.state_dict(),
+            'scheduler' : scheduler.state_dict(),
+            'mode':args.mode
+        }, is_best_acc, epoch+1, global_rank, args)
 
         if args.tpu: 
             xm.master_print("******************* Save CKPT Finished *******************")

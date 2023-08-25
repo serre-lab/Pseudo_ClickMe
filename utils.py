@@ -215,15 +215,11 @@ def setup_for_distributed(args, is_master):
     builtins.print = print
   
 def save_model(args, state, filename):
-    if args.tpu and is_main_process(args.tpu):
-        # xm.save(state, filename, master_only=True, global_master=False) # save ckpt on master process
+    if args.tpu:
         xm.save(state, filename, global_master=True) # save ckpt on master process
-        return 
     else: 
         torch.save(state, filename)
     return
-    # if is_main_process(args.tpu):
-    #     torch.save(state, filename)
        
 def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
     '''
@@ -245,35 +241,21 @@ def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
     save_dir = os.path.join(model_dir, args.mode) # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/"
     pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
     
-    if args.tpu:
-        xm.master_print("******************* Start Saving CKPT *******************")
-    else:
-        print("******************* Start Saving CKPT *******************")
-        
     filename = os.path.join(save_dir, "ckpt_" + str(epoch) + ".pth.tar")
-    
-    if is_main_process(args.tpu):
-        save_model(args, state, filename)
-    else:
-        xm.master_print("Not a main Process!")
-        
+    save_model(args, state, filename)
+ 
     if args.tpu:
-        xm.master_print(filename, " is saved successfully!")
+        xm.master_print("Is this ckpt best? ", is_best_acc)
     else:
-        print(filename, " is saved successfully!")
-    
-    if args.tpu:
-        xm.master_print(is_best_acc, " is this ckpt best?")
-    else:
-        print(is_best_acc, " is this ckpt best?")
+        print("Is this ckpt best? ", is_best_acc)
     
     if is_best_acc:
         best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
         save_model(args, state, best_filename)
         if args.tpu:
-            xm.master_print("Is best: ", str(epoch))
+            xm.master_print("The best model is at ", str(epoch))
         else:
-            print("Is best ", str(epoch))
+            print("The best model is at ", str(epoch))
         
     rmfile = os.path.join(save_dir, "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
     if global_rank == 0 and os.path.exists(rmfile):
@@ -282,11 +264,6 @@ def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
             xm.master_print("Removed ", "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
         else:
             print("Removed ", "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
-    
-    if args.tpu:      
-        xm.master_print("******************* Finish Saving CKPT *******************")
-    else:
-        print("******************* Finish Saving CKPT *******************")
     
     return 
 
