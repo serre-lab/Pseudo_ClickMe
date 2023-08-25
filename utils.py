@@ -182,16 +182,48 @@ class str2bool(argparse.Action):
             setattr(namespace, self.dest, False)
         else:
             raise argparse.ArgumentTypeError(f"Invalid value for {self.dest}: {values}")
+        
+def init_distributed_mode(args):
+    print("Init distributed mode")
+    if args.tpu:
+        args.rank = xm.get_ordinal()
+        args.distributed = True
+        setup_for_distributed(args)
+        return
+    
+def setup_for_distributed(args):
+    """
+    This function disables printing when not in master process
+    """
+    builtin_print = builtins.print
+    
+    is_master = args.rank == 0
+
+    def print(*args, **kwargs):
+        force = kwargs.pop('force', False)
+        if args == ('torch_xla.core.xla_model::mark_step',):
+            # XLA server step tracking
+            if is_master:
+                builtin_print(*args, **kwargs)
+            return
+        force = force or (not args.tpu and get_world_size(args.tpu) > 8)
+        if is_master or force:
+            now = datetime.datetime.now().time()
+            builtin_print('[{}] '.format(now), end='')  # print with time stamp
+            builtin_print(*args, **kwargs)
+
+    builtins.print = print
   
 def save_model(args, state, filename):
-    # if args.tpu and is_main_process(args.tpu):
-    #     xm.save(args, state, filename, master_only=True, global_master=False) # save ckpt on master process
-    #     return 
-    # else: 
-    #     torch.save(state, filename)
-    # return
-    if is_main_process(args.tpu):
+    if args.tpu and is_main_process(args.tpu):
+        # xm.save(state, filename, master_only=True, global_master=False) # save ckpt on master process
+        xm.save(state, filename, global_master=True) # save ckpt on master process
+        return 
+    else: 
         torch.save(state, filename)
+    return
+    # if is_main_process(args.tpu):
+    #     torch.save(state, filename)
        
 def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
     '''

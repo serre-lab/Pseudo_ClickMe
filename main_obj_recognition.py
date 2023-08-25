@@ -226,6 +226,9 @@ def test(test_loader, model, criterion, args, global_rank):
     return top1.avg, losses.avg
 
 def _mp_fn(index, args):
+    
+    utils.init_distributed_mode(args)
+    
     global device
     global best_acc
     
@@ -398,6 +401,7 @@ def _mp_fn(index, args):
         # save model for best_acc model
         # if epoch < args.epochs // 2: continue
         if global_rank == 0:
+            xm.master_print("Current Rank is: ", utils.get_rank(args.tpu))
             is_best_acc = val_acc > best_acc
             best_acc = max(val_acc, best_acc)
             utils.save_checkpoint({
