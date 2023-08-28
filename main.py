@@ -1,11 +1,18 @@
-import argparse
 import os
+import gc
 import random
 import shutil
 import time
 import glob
+import pathlib
+import argparse
+from itertools import chain
 import warnings
 warnings.filterwarnings('ignore')
+
+import numpy as np
+import timm
+import wandb
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -16,15 +23,14 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Subset, DataLoader
+from torch.utils.data.distributed import DistributedSampler
+import torch.distributed as dist
 
-import timm
-import wandb
-
+import utils
 from dataset import ClickMe
-from utils import AverageMeter, ProgressMeter, compute_human_alignment
 from metrics import accuracy
-from configs import DefaultConfigs
 from loss import harmonizer_loss, harmonization_eval
+from utils import AverageMeter, ProgressMeter, compute_human_alignment
 
 try:
     import torch_xla.core.xla_model as xm
@@ -35,28 +41,8 @@ try:
 except ImportError:
     xm = xmp = pl = xu = None
     
-global best_acc, best_human_alignment
-config = DefaultConfigs()
-
-# set running device
-if config.tpu == True:
-    device = xm.xla_device()
-elif torch.cuda.is_available():
-    device = 'cuda:{}'.format(config.gpu_id) 
-else: 
-    device = "cpu"
-    
-if config.wandb:
-    wandb.init(
-        project="pseudo-clickme",  # set the wandb project where this run will be logged
-        config={                   # track hyperparameters and run metadata
-            "learning_rate": config.lr,
-            "architecture": config.model_name,
-            "dataset": "ImageNet",
-            "epochs": config.epochs,
-            "mode": config.mode,
-        }
-    )
+best_acc, best_human_alignment = 0, 0 
+device = None
 
 def broadcast_xla_master_model_param(model, args):
     """
@@ -76,20 +62,19 @@ def broadcast_xla_master_model_param(model, args):
     xm.mark_step()
     xm.rendezvous("broadcast_xla_master_model_param")
 
-def _xla_logging(logger, value, batch_size, var_name=None):
-    # assert torch.is_tensor(value) or , f"the value must be a tensor"
+def _xla_logging(logger, value, batch_size, args, global_rank, var_name=None):
     val = value.item()
     logger.update(val, batch_size)
     
-    if config.wandb and var_name != None:
+    if global_rank == 0 and args.wandb and var_name != None: # just update values on the main process
         wandb.log({var_name: val})
 
-def train(train_loader, model, criterion, optimizer, epoch):
+def train(train_loader, model, criterion, optimizer, epoch, args, global_rank):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     cce_losses = AverageMeter('CCE_Loss', ':.2e')
     hmn_losses = AverageMeter('HMN_Loss', ':.2e')
-    top1 = AverageMeter('Acc@1', ':6.2f')
+    top1 = AverageMeter('Acc@1', ':6.3f')
     progress = ProgressMeter(
         len(train_loader),
         [batch_time, data_time, cce_losses, hmn_losses, top1],
@@ -112,33 +97,39 @@ def train(train_loader, model, criterion, optimizer, epoch):
         harmonization_loss, cce_loss = harmonizer_loss(model, images, target, heatmaps, criterion)
 
         # measure accuracy and update loss
-        acc1, acc5 = accuracy(output, target, topk=(1, 5))
-        if config.tpu != True:
+        acc1 = accuracy(output, target, topk=(1,))[0]
+        if args.tpu != True:
             hmn_losses.update(harmonization_loss.item(), images.size(0))
             cce_losses.update(cce_loss.item(), images.size(0))
             top1.update(acc1[0].item(), images.size(0))
         else:
-            xm.add_step_closure(_xla_logging, args=(hmn_losses, harmonization_loss, images.size(0), "harmonization_loss"))
-            xm.add_step_closure(_xla_logging, args=(cce_losses, cce_loss, images.size(0), "train_cce_loss"))
-            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc"))
+            if args.epochs <= args.logger_update or (batch_id + 1) % args.logger_update == 0: # otherwise, passing values from TPU to CPU will be very slow
+                xm.add_step_closure(_xla_logging, args=(hmn_losses, harmonization_loss, images.size(0), args, global_rank, "harmonization_loss"))
+                xm.add_step_closure(_xla_logging, args=(cce_losses, cce_loss, images.size(0), args, global_rank, "train_cce_loss"))
+                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc"))
+            # xm.add_step_closure(_xla_logging, args=(hmn_losses, harmonization_loss, images.size(0), args, global_rank, "harmonization_loss"))
+            # xm.add_step_closure(_xla_logging, args=(cce_losses, cce_loss, images.size(0), args, global_rank, "train_cce_loss"))
+            # xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc"))
 
         # update
         optimizer.zero_grad()
         harmonization_loss.backward()
-        if config.tpu:
-            xm.reduce_gradients(optimizer) # Reduce gradients
-        optimizer.step()
+        if args.tpu: 
+            xm.optimizer_step(optimizer) # # barrier=True is required on single-core training but can be dropped with multiple cores
+        else:
+            optimizer.step()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
-        if (batch_id + 1) % config.interval == 0:
-            progress.display(batch_id + 1)
+        if (batch_id + 1) % args.interval == 0:
+            progress.synchronize_between_processes(args.tpu) # synchronize the tensors across all tpus for every step
+            progress.display(batch_id + 1, args.tpu)
 
     return top1.avg, hmn_losses.avg
 
-def validate(val_loader, model, criterion):
+def validate(val_loader, model, criterion, args, global_rank):
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('CCE-Loss', ':.2e')
     top1 = AverageMeter('Acc@1', ':6.2f')
@@ -157,27 +148,28 @@ def validate(val_loader, model, criterion):
         
         # evaluation
         output, cce_loss, alignment_score = harmonization_eval(model, images, target, heatmaps, criterion)
-        acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        acc1 = accuracy(output, target, topk=(1, ))[0]
         
-        if config.tpu != True:
+        if args.tpu != True:
             losses.update(cce_loss.item(), images.size(0))
             alignment.update(alignment_score.item(), images.size(0))
             top1.update(acc1[0].item(), images.size(0))
         else:
-            xm.add_step_closure(_xla_logging, args=(losses, cce_loss, images.size(0), "val_cce_loss"))
-            xm.add_step_closure(_xla_logging, args=(alignment, alignment_score, images.size(0), "alignment"))
-            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), "top1_acc"))
+            xm.add_step_closure(_xla_logging, args=(losses, cce_loss, images.size(0), args, global_rank, "val_cce_loss"))
+            xm.add_step_closure(_xla_logging, args=(alignment, alignment_score, images.size(0), args, global_rank, "alignment"))
+            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc"))
             
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
-        if (batch_id + 1) % config.interval == 0:
-            progress.display(batch_id + 1)
+        if (batch_id + 1) % (args.interval // 5) == 0:
+            progress.synchronize_between_processes(args.tpu) # synchronize the tensors across all tpus for every step
+            progress.display(batch_id + 1, args.tpu)
 
     return top1.avg, losses.avg, alignment.avg
 
-def test(test_loader, model, criterion):
+def test(test_loader, model, criterion, args, global_rank):
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('CCE-Loss', ':.2e')
     top1 = AverageMeter('Acc@1', ':6.2f')
@@ -195,181 +187,340 @@ def test(test_loader, model, criterion):
         images, heatmaps, target = images.to(device, non_blocking=True), heatmaps.to(device, non_blocking=True), target.to(device, non_blocking=True)
         
         output, cce_loss, alignment_score = harmonization_eval(model, images, target, heatmaps, criterion)
-        acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        acc1 = accuracy(output, target, topk=(1, ))[0]
         
-        if config.tpu != True:
+        if args.tpu != True:
             losses.update(cce_loss.item(), images.size(0))
             alignment.update(alignment_score.item(), images.size(0))
             top1.update(acc1[0].item(), images.size(0))
         else:
-            xm.add_step_closure(_xla_logging, args=(losses, cce_loss, images.size(0)))
-            xm.add_step_closure(_xla_logging, args=(alignment, alignment_score, images.size(0)))
-            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0)))
+            xm.add_step_closure(_xla_logging, args=(losses, cce_loss, images.size(0), args, global_rank))
+            xm.add_step_closure(_xla_logging, args=(alignment, alignment_score, images.size(0), args, global_rank))
+            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank))
             
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
-        if (batch_id + 1) % config.interval == 0:
-            progress.display(batch_id + 1)
+        progress.synchronize_between_processes(args.tpu) # synchronize the tensors across all tpus for every step
+        progress.display(batch_id + 1, args.tpu)
 
     return top1.avg, losses.avg, alignment.avg
 
-def save_checkpoint(state, is_best_acc, is_best_alignment):
-    if not os.path.exists(config.weights):
-        os.mkdir(config.best_models) 
+def _mp_fn(index, args):
+    global device
+    global best_acc
+    global best_human_alignment
     
-    if not os.path.exists(config.best_models):
-        os.mkdir(config.best_models) 
-            
-    save_dir = config.weights + config.model_name 
-    if not os.path.exists(save_dir):
-        os.mkdir(save_dir)
-    filename = os.path.join(save_dir, "_checkpoint.pth.tar")
-    
-    if config.tpu == True:
-        xser.save(state, filename)
-    else: 
-        torch.save(state, filename)
-        
-    if is_best_acc:
-        save_dir = config.best_models + config.model_name
-        if not os.path.exists(save_dir):
-            os.mkdir(save_dir)
-        message = os.path.join(save_dir, 'best_acc.pth.tar')
-        shutil.copyfile(filename, message)
-        
-    if is_best_alignment:
-        save_dir = config.best_models + config.model_name
-        if not os.path.exists(save_dir):
-            os.mkdir(save_dir)
-        message = os.path.join(save_dir, 'best_alignment.pth.tar')
-        shutil.copyfile(filename, message)
-
-def main():
     best_acc = 0
     best_human_alignment = 0
+    global_rank = utils.get_rank(args.tpu)
+    
+    # enable wandb
+    if args.wandb and global_rank == 0:
+        wandb.login(key="486f67137c1b6905ac11b8caaaf6ecb276bfdf8e")
+        wandb.init(
+            project="pseudo-clickme",  # set the wandb project where this run will be logged
+            entity="serrelab",
+            config={  # track hyperparameters and run metadata
+                "learning_rate": args.learning_rate,
+                "architecture": args.model_name,
+                "dataset": "ImageNet",
+                "epochs": args.epochs,
+                "mode": args.mode,
+                "pretrained": args.pretrained
+            }
+        )
+    
+    # set running device
+    if args.tpu == True:
+        device = xm.xla_device() # device on current procoess
+    elif torch.cuda.is_available():
+        device = 'cuda:{}'.format(args.gpu_id) 
+    else: 
+        device = "cpu"
     
     torch.set_default_tensor_type('torch.FloatTensor')
+    
+    seed = args.seed + utils.get_rank(args.tpu)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
 
-    # Model Configurations
-    if config.pretrained:
-        print("=> using pre-trained model '{}'".format(config.model_name))
-        # model = models.__dict__[config.model_name](pretrained=True)
-        model = timm.create_model(config.model_name, num_classes=1000, pretrained=True)
+    # Model configsurations
+    if args.pretrained:
+        if args.tpu:
+            xm.master_print("=> using pre-trained model '{}'".format(args.model_name))
+        else:
+            print("=> using pre-trained model '{}'".format(args.model_name))
+        model = timm.create_model(args.model_name, num_classes=1000, pretrained=True)
     else:
-        print("=> creating model '{}'".format(config.model_name))
-        # model = models.__dict__[config.model_name]()
-        model = timm.create_model(config.model_name, num_classes=1000, pretrained=False)
+        if args.tpu:
+            xm.master_print("=> creating model '{}'".format(args.model_name))
+        else:
+            print("=> creating model '{}'".format(args.model_name))
+        model = timm.create_model(args.model_name, num_classes=1000, pretrained=False)
 
     model.to(device)
-    if config.tpu:
+    if args.tpu:
         broadcast_xla_master_model_param(model, None)
 
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1).to(device)
     optimizer = torch.optim.Adam(
         model.parameters(), 
-        lr = config.lr,
-        weight_decay = config.weight_decay)
-    scheduler = StepLR(optimizer, step_size=config.step_size, gamma=config.gamma)
+        lr = args.learning_rate,
+        weight_decay = args.weight_decay)
+    scheduler = StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
 
-    if "cuda" in device:
-        cudnn.benchmark = True
-
+    cudnn.benchmark = True
+       
     # Continue training
-    if config.resume:
-        if os.path.isfile(config.resume):
-            checkpoint = torch.load(config.best_models + "model_best.pth.tar")
-            config.start_epoch = checkpoint['epoch']
+    if args.resume:
+        if os.path.isfile(args.resume):
+            if args.tpu == True:
+                checkpoint = xm.load(os.path.join(args.weights, args.model_name, args.mode, 'best.pth.tar'))
+            else:
+                checkpoint = torch.load(os.path.join(args.weights, args.model_name, args.mode, 'best.pth.tar'))
+            args.start_epoch = checkpoint['epoch']
             best_acc = checkpoint['best_acc']
             best_human_alignment = checkpoint['best_human_alignment']
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             scheduler.load_state_dict(checkpoint['scheduler'])
             print("=> loaded checkpoint '{}' (epoch {})"
-                    .format(config.resume, checkpoint['epoch']))
+                    .format(args.resume, checkpoint['epoch']))
         else:
-            print("=> no checkpoint found at '{}'".format(config.resume))
+            print("=> no checkpoint found at '{}'".format(args.resume))
+            return
 
-    # Dataset Initialization
-    if config.evaluate:
-        test_file_paths = glob.glob(os.path.join(config.data_dir, config.test_clickme_paths))
+     # Dataset Initialization
+    if args.evaluate:
+        test_file_paths = glob.glob(os.path.join(args.data_dir, args.test_clickme_paths))
         test_dataset = ClickMe(test_file_paths, is_training=False)
         test_loader = DataLoader(
             test_dataset, 
-            batch_size=config.batch_size, 
-            num_workers=config.num_workers, 
+            batch_size=args.batch_size, 
+            num_workers=args.num_workers, 
             pin_memory=True,
         )
-        validate(test_loader, model, criterion)
+        test(test_loader, model, criterion, args)
         return
-    else:
-        assert config.mode in ["imagenet", "pseudo", "mix"], f"Please check the data paths!"
-        if config.mode == "imagenet":
-            train_file_paths = glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
-            val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_pseudo_paths))
-        if config.mode == "pseudo":
-            train_file_paths = glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
-            val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_clickme_paths))
-        if config.mode == "mix":
-            train_file_paths = glob.glob(os.path.join(config.data_dir, config.train_clickme_paths)) 
-            train_file_paths += glob.glob(os.path.join(config.data_dir, config.train_pseudo_paths))
-            val_file_paths = glob.glob(os.path.join(config.data_dir, config.val_clickme_paths))
+    
+    assert args.mode in ["imagenet", "pseudo", "mix"], f"Please check the data paths!"
+    if args.mode == "imagenet":
+        train_file_paths = glob.glob(os.path.join(args.data_dir, args.train_pseudo_paths))
+        val_file_paths = glob.glob(os.path.join(args.data_dir, args.val_pseudo_paths))
+    if args.mode == "pseudo":
+        train_file_paths = glob.glob(os.path.join(args.data_dir, args.train_pseudo_paths))
+        val_file_paths = glob.glob(os.path.join(args.data_dir, args.val_clickme_paths))
+    if args.mode == "mix":
+        train_file_paths = glob.glob(os.path.join(args.data_dir, args.train_clickme_paths)) 
+        train_file_paths += glob.glob(os.path.join(args.data_dir, args.train_pseudo_paths))
+        val_file_paths = glob.glob(os.path.join(args.data_dir, args.val_clickme_paths))
+                
+    train_dataset = ClickMe(train_file_paths, is_training=True)
+    val_dataset = ClickMe(val_file_paths, is_training=False)
+    
+    print("Global Rank:", global_rank)
+    sampler_rank = global_rank
+    
+    num_tasks = utils.get_world_size(args.tpu)
+    
+    train_sampler = DistributedSampler(
+        train_dataset,
+        num_replicas = num_tasks,
+        rank = sampler_rank, 
+        shuffle = True)
+
+    val_sampler = DistributedSampler(
+        val_dataset, 
+        num_replicas = num_tasks,
+        rank = sampler_rank, 
+        shuffle = False)
+
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size = args.batch_size, 
+        num_workers = args.num_workers,
+        pin_memory = False,
+        sampler = train_sampler,
+        drop_last = True # DataParallel cores must run the same number of batches each, and only full batches are allowed.
+    )
+    val_loader = DataLoader(
+        val_dataset, 
+        batch_size = args.batch_size, 
+        num_workers = args.num_workers, 
+        pin_memory = False,
+        sampler = val_sampler,
+        drop_last = True
+    )
+    
+    if args.tpu:
+        train_loader = pl.MpDeviceLoader(train_loader, device)
+        val_loader = pl.MpDeviceLoader(val_loader, device)
+
+    for epoch in range(args.start_epoch, args.epochs):
+        if args.tpu:
+            xm.master_print('Epoch: [%d | %d]' % (epoch + 1, args.epochs))
+        else:
+            print('Epoch: [%d | %d]' % (epoch + 1, args.epochs))
             
-        train_dataset = ClickMe(train_file_paths, is_training=True)
-        val_dataset = ClickMe(val_file_paths, is_training=False)
-
-        train_loader = DataLoader(
-            train_dataset, 
-            batch_size=config.batch_size, 
-            num_workers=config.num_workers,
-            pin_memory=True,
-            shuffle=True
-        )
-        val_loader = DataLoader(
-            val_dataset, 
-            batch_size=config.batch_size, 
-            num_workers=config.num_workers, 
-            pin_memory=True,
-            shuffle=False
-        )
-
-    for epoch in range(config.start_epoch, config.epochs):
-        print('Epoch: [%d | %d]' % (epoch + 1, config.epochs))
+        epoch_s = time.time()
 
         # train for one epoch
-        train_acc, train_loss = train(train_loader, model, criterion, optimizer, epoch)
+        train_acc, train_loss = train(train_loader, model, criterion, optimizer, epoch, args, global_rank)
 
         # evaluate on validation set
-        val_acc, val_loss, human_alignment = validate(val_loader, model, criterion)
+        val_acc, val_loss, human_alignment = validate(val_loader, model, criterion, args, global_rank)
 
         # Update scheduler
         scheduler.step()
+        
+        epoch_e = time.time()
+        
+        if args.tpu:
+            xm.master_print("******************* Save CKPT Started *******************")
 
         # save model for best_acc model
+        # if epoch < args.epochs // 2: continue
         is_best_acc = val_acc > best_acc
         best_acc = max(val_acc, best_acc)
         is_best_alignment = human_alignment > best_human_alignment
         best_human_alignment = max(human_alignment, best_human_alignment)
-        save_checkpoint({
+
+        '''
+        # No need to check whether it is on the main process. Torch_XLA automatically does that for us
+        # 'rendezvous' in xm.save() makes sure all processes are at the same stage
+        # if process A is at here, it will wait for other processes until here. 
+        '''
+        utils.save_checkpoint({
             'epoch': epoch + 1,
-            "model_name": config.model_name,
+            "model_name": args.model_name,
             'state_dict': model.state_dict(),
             'acc': val_acc,
             'best_acc': best_acc,
             'alignment': human_alignment,
             'best_human_alignment': best_human_alignment,
             'optimizer': optimizer.state_dict(),
-            'scheduler' : scheduler.state_dict()
-        }, is_best_acc, is_best_alignment)
+            'scheduler' : scheduler.state_dict(),
+            'mode':args.mode
+        }, is_best_acc, is_best_alignment, epoch+1, global_rank, args)
 
 if __name__ == '__main__':
+    # create the command line parser
+    parser = argparse.ArgumentParser('Harmonization PyTorch Scripts for TPU Training', add_help=False)
+    parser.add_argument("-dd", "--data_dir", required = False, type = str, 
+                        default = '/mnt/disks/clickme-with-pseudo/test',
+                        # choices=[
+                        #     '/mnt/disks/clickme-with-pseudo/test', # small-scale data examples
+                        #     '/mnt/disks/clickme-with-pseudo/'
+                        # ],
+                        help="please enter a data directory")
+    parser.add_argument("--train_pseudo_paths", required = False, type = str, 
+                        default = 'PseudoClickMe/train/*.pth', help = "please enter a data directory")
+    parser.add_argument("--train_clickme_paths", required = False, type = str, 
+                        default = 'ClickMe/train/*.pth', help = "please enter a data directory")
+    parser.add_argument("--val_pseudo_paths", required = False, type = str, 
+                        default = 'PseudoClickMe/val/*.pth', help = "please enter a data directory")
+    parser.add_argument("--val_clickme_paths", required = False, type = str, 
+                        default = 'ClickMe/val/*.pth', help = "please enter a data directory")
+    parser.add_argument("--test_clickme_paths", required = False, type = str, 
+                        default = 'ClickMe/test/*.pth', help = "please enter a data directory")
+    parser.add_argument("-wt", "--weights", required = False, type = str,
+                        default = '/mnt/disks/bucket/pseudo_clickme/',
+                        help = "please enter a directory save checkpoints")
+    parser.add_argument("-mn", "--model_name", required = False, type = str,
+                        default = 'resnet50',
+                        help="Please specify a model architecture according to TIMM")
+    parser.add_argument("-md", "--mode", required=False, type = str,
+                        default = 'imagenet', 
+                        choices = [
+                            "pseudo",  # pure imagenet images with pseudo clickme maps
+                            "mix",     # imagenet images with pseudo and real clickme maps
+                            "imagenet" # imagenet images 
+                        ],
+                        help="'pseudo', 'mix' or 'imagenet'?")
+    parser.add_argument("-ep", "--epochs", required=False, type = int, 
+                        default = 3,
+                        help="Number of Epochs")
+    parser.add_argument("-sp", "--start_epoch", required=False, type = int, 
+                        default = 0,
+                        help="start epoch is usually used with 'resume'")
+    parser.add_argument("-bs", "--batch_size", required=False, type = int,
+                        default = 4,
+                        help="Batch Size")
+    parser.add_argument("-lr", "--learning_rate", required=False, type = float,
+                        default = 0.1,
+                        help="Learning Rate")
+    parser.add_argument("-mt", "--momentum", required=False, type = float,
+                        default = 0.9,
+                        help="SGD momentum")
+    parser.add_argument("-ss", "--step_size", required=False, type = int,
+                        default = 25,
+                        help="learning rate scheduler")
+    parser.add_argument("-gm", "--gamma", required=False, type = float,
+                        default = 0.1,
+                        help="scheduler parameters, which decides the change of learning rate ")
+    parser.add_argument("-wd", "--weight_decay", required=False, type = int,
+                        default = 1e-5,
+                        help="weight decay, regularization")
+    parser.add_argument("-iv", "--interval", required=False, type = int,
+                        default = 2,
+                        help="Step interval for printing logs")
+    parser.add_argument("-nw", "--num_workers", required=False, type = int,
+                        default = 8,
+                        help="number of workers in dataloader")
+    parser.add_argument("-gid", "--gpu_id", required=False, type = int,
+                        default = 1,
+                        help="specify gpu id for single gpu training")
+    parser.add_argument("-tc", "--tpu_cores_per_node", required=False, type = int,
+                        default = 1,
+                        help="specify the number of tpu cores")
+    parser.add_argument("-ckpt", "--ckpt_remain", required=False, type = int,
+                        default = 5,
+                        help="how many checkpoints can be saved at most?")
+    parser.add_argument("-lu", "--logger_update", required=False, type = int,
+                        default = 10,
+                        help="Update interval (needed for TPU training)")
+    parser.add_argument("-sd", "--seed", required=False, type = int,
+                        default = 42,
+                        help="Update interval (needed for TPU training)")
+    parser.add_argument("-ev", "--evaluate", required=False, type = str,
+                        default = False,
+                        action = utils.str2bool,
+                        help="Whether to evaluate a model")
+    parser.add_argument("-pt", "--pretrained", required=False, type = str,
+                        default = False,
+                        action = utils.str2bool,
+                        help="Whether to use pretrained model from TIMM")
+    parser.add_argument("-rs", "--resume", required=False, type = str,
+                        default = False,
+                        action = utils.str2bool,
+                        help="Whether to continue (usually used with 'evaluate')")
+    parser.add_argument("-gt", "--tpu", required=False, type = str,
+                        default = False,
+                        action = utils.str2bool,
+                        help="Whether to use Google Cloud Tensor Processing Units")
+    parser.add_argument("-wb", "--wandb", required=False, type = str,
+                        default = False,
+                        action = utils.str2bool,
+                        help="Whether to W&B to record progress")
     
-    if config.tpu == True:
-        tpu_cores_per_node = 8
-        xmp.spawn(main(), args=(), nprocs=tpu_cores_per_node)
-    else:
-        main()
+    # modify the configurations according to args parser
+    args = parser.parse_args()
         
-    if config.wandb:
+    start_time = time.time()
+    
+    # start running
+    if args.tpu == True:
+        tpu_cores_per_node = args.tpu_cores_per_node  # a TPUv3 device contains 4 chips and 8 cores in total
+        xmp.spawn(_mp_fn, args=(args,), nprocs=tpu_cores_per_node) # cannot call xm.xla_device() before spawing
+                                                                   # don't forget comma args=(args,)
+    else:
+        _mp_fn(0, args)
+        
+    if args.wandb:
         wandb.finish()  # [optional] finish the wandb run, necessary in notebooks
+        
+    end_time = time.time()
+    print('Total hours: ', round((end_time - start_time) / 3600, 1))
+    print("****************************** DONE! ******************************")

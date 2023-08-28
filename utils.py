@@ -219,9 +219,8 @@ def save_model(args, state, filename):
         xm.save(state, filename, global_master=True) # save ckpt on master process
     else: 
         torch.save(state, filename)
-    return
        
-def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
+def save_checkpoint(state, is_best_acc, is_best_alignment, epoch, global_rank, args):
     '''
     /mnt/disks/bucket/pseudo_clickme/
     |__resnet50
@@ -245,12 +244,20 @@ def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
     save_model(args, state, filename)
  
     if is_best_acc:
-        best_filename = os.path.join(save_dir, 'best.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
+        best_filename = os.path.join(save_dir, 'best_acc.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
         save_model(args, state, best_filename)
         if args.tpu:
-            xm.master_print("The best model is saved at EPOCH", str(epoch))
+            xm.master_print("The best_acc model is saved at EPOCH", str(epoch))
         else:
-            print("The best model is saved at EPOCH", str(epoch))
+            print("The best_acc model is saved at EPOCH", str(epoch))
+            
+    if is_best_alignment:
+        best_filename = os.path.join(save_dir, 'best_alignment.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
+        save_model(args, state, best_filename)
+        if args.tpu:
+            xm.master_print("The best_acc model is saved at EPOCH", str(epoch))
+        else:
+            print("The best_alignment model is saved at EPOCH", str(epoch))
         
     rmfile = os.path.join(save_dir, "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
     if global_rank == 0 and os.path.exists(rmfile):
@@ -260,24 +267,3 @@ def save_checkpoint(state, is_best_acc, epoch, global_rank, args):
         else:
             print("Removed ", "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
     
-    return 
-
-"""Uploads a file to GCS bucket"""
-def _upload_blob_gcs(gcs_uri, source_file_name, destination_blob_name):
-    client = storage.Client()
-    blob = Blob.from_string(os.path.join(gcs_uri, destination_blob_name))
-    blob.bucket._client = client
-    blob.upload_from_filename(source_file_name)
-    
-    xm.master_print("Saved Model Checkpoint file {} and uploaded to {}.".format(source_file_name, os.path.join(gcs_uri, destination_blob_name)))
-    return
-
-"""Downloads a file from GCS to local directory"""  
-def _read_blob_gcs(BUCKET, CHKPT_FILE, DESTINATION):
-
-    client = storage.Client()
-    bucket = client.get_bucket(BUCKET)
-    blob = bucket.get_blob(CHKPT_FILE)
-    blob.download_to_filename(DESTINATION)
-    return
-

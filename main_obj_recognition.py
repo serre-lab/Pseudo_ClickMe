@@ -1,16 +1,19 @@
-import argparse
 import os
+import gc
 import random
 import shutil
 import time
 import glob
-from itertools import chain
 import pathlib
-import gc
+import argparse
+from itertools import chain
 import warnings
 warnings.filterwarnings('ignore')
 
 import numpy as np
+import timm
+import wandb
+
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
@@ -23,15 +26,10 @@ from torch.utils.data import Subset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 
-import timm
-import wandb
-
-from dataset import ClickMe
-from utils import AverageMeter, ProgressMeter, compute_human_alignment
-from metrics import accuracy
-# from configs import Configs as configs
-
 import utils
+from dataset import ClickMe
+from metrics import accuracy
+from utils import AverageMeter, ProgressMeter, compute_human_alignment
 
 try:
     import torch_xla.core.xla_model as xm
@@ -61,8 +59,7 @@ def broadcast_xla_master_model_param(model, args):
     xm.wait_device_ops()
     xm.all_reduce(xm.REDUCE_SUM, parameters_and_buffers)
     xm.mark_step()
-    xm.rendezvous("broadcast_xla_master_model_param")
-    return 
+    xm.rendezvous("broadcast_xla_master_model_param") 
 
 def _xla_logging(logger, value, batch_size, args, global_rank, var_name=None):
     val = value.item()
@@ -70,7 +67,6 @@ def _xla_logging(logger, value, batch_size, args, global_rank, var_name=None):
     
     if global_rank == 0 and args.wandb and var_name != None: # just update values on the main process
         wandb.log({var_name: val})
-    return 
 
 def train(train_loader, model, criterion, optimizer, epoch, args, global_rank):
     batch_time = AverageMeter('Time', ':6.3f')
@@ -219,9 +215,8 @@ def test(test_loader, model, criterion, args, global_rank):
             batch_time.update(time.time() - end)
             end = time.time()
 
-            if (batch_id + 1) % args.interval == 0:
-                progress.synchronize_between_processes(args.tpu) # synchronize the tensors across all tpus for every step
-                progress.display(batch_id + 1, args.tpu)
+            progress.synchronize_between_processes(args.tpu) # synchronize the tensors across all tpus for every step
+            progress.display(batch_id + 1, args.tpu)
                 
     return top1.avg, losses.avg
 
@@ -247,6 +242,7 @@ def _mp_fn(index, args):
                 "dataset": "ImageNet",
                 "epochs": args.epochs,
                 "mode": args.mode,
+                "pretrained": args.pretrained
             }
         )
     
@@ -258,7 +254,6 @@ def _mp_fn(index, args):
     else: 
         device = "cpu"
     
-    best_acc = 0
     torch.set_default_tensor_type('torch.FloatTensor')
     
     seed = args.seed + utils.get_rank(args.tpu)
@@ -404,9 +399,11 @@ def _mp_fn(index, args):
         is_best_acc = val_acc > best_acc
         best_acc = max(val_acc, best_acc)
         
-        # no need to check whether the process is main. Torch_XLA automatically does that for us
-        # rendezvous in xm.save() makes sure all the processes are at the same stage
+        '''
+        # No need to check whether it is on the main process. Torch_XLA automatically does that for us
+        # 'rendezvous' in xm.save() makes sure all processes are at the same stage
         # if process A is at here, it will wait for other processes until here. 
+        '''
         utils.save_checkpoint({
             'epoch': epoch + 1,
             "model_name": args.model_name,
@@ -416,7 +413,7 @@ def _mp_fn(index, args):
             'optimizer': optimizer.state_dict(),
             'scheduler' : scheduler.state_dict(),
             'mode':args.mode
-        }, is_best_acc, epoch+1, global_rank, args)
+        }, is_best_acc, None, epoch+1, global_rank, args)
 
         if args.tpu: 
             xm.master_print("******************* Save CKPT Finished *******************")
