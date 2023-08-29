@@ -394,7 +394,7 @@ def _mp_fn(index, args):
             xm.master_print("******************* Save CKPT Started *******************")
 
         # save model for best_acc model
-        # if epoch < args.epochs // 2: continue
+        if epoch < args.epochs - 20: continue
         # xm.master_print("Current Rank is: ", utils.get_rank(args.tpu))
         is_best_acc = val_acc > best_acc
         best_acc = max(val_acc, best_acc)
