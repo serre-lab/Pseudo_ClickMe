@@ -10,7 +10,7 @@ import torchvision.transforms as transforms
 
 data_transforms = {
     'aug': transforms.Compose([
-        transforms.RandomResizedCrop(size=224, scale=(0.9, 1.0)),  # Randomly crop and resize the image tensor
+        transforms.RandomResizedCrop(size=224, scale=(0.95, 1.0)),  # Randomly crop and resize the image tensor
         transforms.RandomHorizontalFlip(p=0.5),  # Randomly flip the image horizontally with a probability of 0.5
         # transforms.RandomVerticalFlip(p=0.5),  # Randomly flip the image vertically with a probability of 0.5
         transforms.RandomRotation(degrees=(-10, 10)),
