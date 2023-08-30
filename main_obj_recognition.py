@@ -279,10 +279,14 @@ def _mp_fn(index, args):
         broadcast_xla_master_model_param(model, args)
 
     criterion = nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.SGD(
+    # optimizer = torch.optim.SGD(
+    #     model.parameters(), 
+    #     lr = args.learning_rate,
+    #     momentum = args.momentum,
+    #     weight_decay = args.weight_decay)
+    optimizer = torch.optim.Adam(
         model.parameters(), 
         lr = args.learning_rate,
-        momentum = args.momentum,
         weight_decay = args.weight_decay)
     scheduler = StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
 
@@ -380,21 +384,33 @@ def _mp_fn(index, args):
         epoch_s = time.time()
 
         # train for one epoch
+        if args.tpu:
+            xm.master_print('Training Starts...')
+        else:
+            print('Training Starts...')
         train_acc, train_loss = train(train_loader, model, criterion, optimizer, epoch, args, global_rank)
 
         # evaluate on validation set
+        if args.tpu:
+            xm.master_print('Val Starts...')
+        else:
+            print('Val Starts...')
         val_acc, val_loss = validate(val_loader, model, criterion, args, global_rank)
 
         # Update scheduler
+        if args.tpu:
+            xm.master_print('Scheduler Updates')
+        else:
+            print('Scheduler Updates')
         scheduler.step()
         
         epoch_e = time.time()
         
+        # if epoch < args.epochs - 20: continue
         if args.tpu:
             xm.master_print("******************* Save CKPT Started *******************")
 
         # save model for best_acc model
-        if epoch < args.epochs - 20: continue
         # xm.master_print("Current Rank is: ", utils.get_rank(args.tpu))
         is_best_acc = val_acc > best_acc
         best_acc = max(val_acc, best_acc)
@@ -476,7 +492,7 @@ if __name__ == '__main__':
                         default = 0.9,
                         help="SGD momentum")
     parser.add_argument("-ss", "--step_size", required=False, type = int,
-                        default = 25,
+                        default = 30,
                         help="learning rate scheduler")
     parser.add_argument("-gm", "--gamma", required=False, type = float,
                         default = 0.1,
