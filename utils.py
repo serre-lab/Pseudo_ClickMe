@@ -72,7 +72,7 @@ class AverageMeter(object):
             t = xm.all_reduce(xm.REDUCE_SUM, t).tolist()
             self.count = int(t[0])
             self.sum = t[1]
-            self.avg = self.sum / self.count
+            # self.avg = self.sum / self.count
             return
         if not is_dist_avail_and_initialized(isXLA):
             return
@@ -82,7 +82,7 @@ class AverageMeter(object):
         t = t.tolist()
         self.count = int(t[0])
         self.sum = t[1]
-        self.avg = self.sum / self.count
+        # self.avg = self.sum / self.count
         return
     
 def spearman_correlation_np(heatmaps_a, heatmaps_b):

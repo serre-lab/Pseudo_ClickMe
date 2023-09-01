@@ -74,8 +74,7 @@ def _xla_logging(loggers, values, batch_size, args, global_rank, var_names=None)
     for logger, value, var_name in zip(loggers, values, var_names):
         val = value.item()
         logger.update(val, batch_size)
-        if var_name:
-            pairs[var_name] = val
+        if var_name: pairs[var_name] = val
         
     if global_rank == 0 and args.wandb and var_name != None: # just update values on the main process
         for var_name, value in zip(var_names, values):
