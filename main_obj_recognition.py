@@ -279,16 +279,16 @@ def _mp_fn(index, args):
         broadcast_xla_master_model_param(model, args)
 
     criterion = nn.CrossEntropyLoss().to(device)
-    # optimizer = torch.optim.SGD(
-    #     model.parameters(), 
-    #     lr = args.learning_rate,
-    #     momentum = args.momentum,
-    #     weight_decay = args.weight_decay)
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.SGD(
         model.parameters(), 
         lr = args.learning_rate,
+        momentum = args.momentum,
         weight_decay = args.weight_decay)
-    scheduler = StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
+    # optimizer = torch.optim.Adam(
+    #     model.parameters(), 
+    #     lr = args.learning_rate,
+    #     weight_decay = args.weight_decay)
+    # scheduler = StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
 
     cudnn.benchmark = True
 
