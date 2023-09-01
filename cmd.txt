@@ -30,7 +30,7 @@ export XRT_TPU_CONFIG="localservice;0;localhost:51011"
 export XLA_USE_BF16=1 && export PYTHONUNBUFFERED=1
 python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py \
 --mode imagenet --step_size 25 --tpu True --wandb True --logger_update 2 \
---interval 10 --pretrained False --tpu_cores_per_node 8 --epochs 10 --batch_size 4 --ckpt_remain 2
+--interval 5 --pretrained False --tpu_cores_per_node 8 --epochs 10 --batch_size 4 --ckpt_remain 2
 
 python3 /clickme-with-pseudo/Pseudo_ClickMe/main_obj_recognition.py --dir '/mnt/disks/clickme-with-pseudo/test' --epoch 90 --pretrained True --eval False --model "imagenet"
 
