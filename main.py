@@ -62,12 +62,17 @@ def broadcast_xla_master_model_param(model, args):
     xm.mark_step()
     xm.rendezvous("broadcast_xla_master_model_param")
 
-def _xla_logging(logger, value, batch_size, args, global_rank, var_name=None):
-    val = value.item()
-    logger.update(val, batch_size)
-    
+def _xla_logging(loggers, values, batch_size, args, global_rank, var_names=None):
+    pairs = {}
+    if not var_names: var_names = [None] * len(values)
+    for logger, value, var_name in zip(loggers, values, var_names):
+        val = value.item()
+        logger.update(val, batch_size)
+        if var_name: pairs[var_name] = val
+        
     if global_rank == 0 and args.wandb and var_name != None: # just update values on the main process
-        wandb.log({var_name: val})
+        for var_name, value in zip(var_names, values):
+            wandb.log(pairs)
 
 def train(train_loader, model, criterion, optimizer, epoch, args, global_rank):
     batch_time = AverageMeter('Time', ':6.3f')
@@ -104,13 +109,11 @@ def train(train_loader, model, criterion, optimizer, epoch, args, global_rank):
             top1.update(acc1[0].item(), images.size(0))
         else:
             if args.epochs <= args.logger_update or (batch_id + 1) % args.logger_update == 0: # otherwise, passing values from TPU to CPU will be very slow
-                xm.add_step_closure(_xla_logging, args=(hmn_losses, harmonization_loss, images.size(0), args, global_rank, "harmonization_loss"))
-                xm.add_step_closure(_xla_logging, args=(cce_losses, cce_loss, images.size(0), args, global_rank, "train_cce_loss"))
-                xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc"))
-            # xm.add_step_closure(_xla_logging, args=(hmn_losses, harmonization_loss, images.size(0), args, global_rank, "harmonization_loss"))
-            # xm.add_step_closure(_xla_logging, args=(cce_losses, cce_loss, images.size(0), args, global_rank, "train_cce_loss"))
-            # xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc"))
-
+                var_names = ["harmonization_loss", "train_cce_loss", "top1_acc"]
+                loggers = [hmn_losses, cce_losses, top1]
+                values = [harmonization_loss, cce_loss, acc1[0]]
+                xm.add_step_closure(_xla_logging, args=(loggers, values, images.size(0), args, global_rank, var_names))
+                
         # update
         optimizer.zero_grad()
         harmonization_loss.backward()
@@ -131,7 +134,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args, global_rank):
 
 def validate(val_loader, model, criterion, args, global_rank):
     batch_time = AverageMeter('Time', ':6.3f')
-    losses = AverageMeter('CCE-Loss', ':.2e')
+    cce_losses = AverageMeter('CCE-Loss', ':.2e')
     top1 = AverageMeter('Acc@1', ':6.2f')
     alignment = AverageMeter('Alignment', ':6.3f')
     progress = ProgressMeter(
@@ -151,13 +154,14 @@ def validate(val_loader, model, criterion, args, global_rank):
         acc1 = accuracy(output, target, topk=(1, ))[0]
         
         if args.tpu != True:
-            losses.update(cce_loss.item(), images.size(0))
+            cce_losses.update(cce_loss.item(), images.size(0))
             alignment.update(alignment_score.item(), images.size(0))
             top1.update(acc1[0].item(), images.size(0))
         else:
-            xm.add_step_closure(_xla_logging, args=(losses, cce_loss, images.size(0), args, global_rank, "val_cce_loss"))
-            xm.add_step_closure(_xla_logging, args=(alignment, alignment_score, images.size(0), args, global_rank, "alignment"))
-            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc"))
+            var_names = ["val_cce_loss", "alignment", "top1_acc"]
+            loggers = [cce_losses, alignment, top1]
+            values = [cce_loss, alignment_score, acc1[0]]
+            xm.add_step_closure(_xla_logging, args=(loggers, values, images.size(0), args, global_rank, var_names))
             
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -171,7 +175,7 @@ def validate(val_loader, model, criterion, args, global_rank):
 
 def test(test_loader, model, criterion, args, global_rank):
     batch_time = AverageMeter('Time', ':6.3f')
-    losses = AverageMeter('CCE-Loss', ':.2e')
+    cce_losses = AverageMeter('CCE-Loss', ':.2e')
     top1 = AverageMeter('Acc@1', ':6.2f')
     alignment = AverageMeter('Alignment', ':6.3f')
     progress = ProgressMeter(
@@ -190,13 +194,13 @@ def test(test_loader, model, criterion, args, global_rank):
         acc1 = accuracy(output, target, topk=(1, ))[0]
         
         if args.tpu != True:
-            losses.update(cce_loss.item(), images.size(0))
+            cce_losses.update(cce_loss.item(), images.size(0))
             alignment.update(alignment_score.item(), images.size(0))
             top1.update(acc1[0].item(), images.size(0))
         else:
-            xm.add_step_closure(_xla_logging, args=(losses, cce_loss, images.size(0), args, global_rank))
-            xm.add_step_closure(_xla_logging, args=(alignment, alignment_score, images.size(0), args, global_rank))
-            xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank))
+            loggers = [cce_losses, alignment, top1]
+            values = [cce_loss, alignment_score, acc1[0]]
+            xm.add_step_closure(_xla_logging, args=(loggers, values, images.size(0), args, global_rank))
             
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -367,13 +371,25 @@ def _mp_fn(index, args):
         epoch_s = time.time()
 
         # train for one epoch
+        if args.tpu:
+            xm.master_print('Training Starts...')
+        else:
+            print('Training Starts...')
         train_acc, train_loss = train(train_loader, model, criterion, optimizer, epoch, args, global_rank)
 
         # evaluate on validation set
+        if args.tpu:
+            xm.master_print('Val Starts...')
+        else:
+            print('Val Starts...')
         val_acc, val_loss, human_alignment = validate(val_loader, model, criterion, args, global_rank)
 
         # Update scheduler
         scheduler.step()
+        if args.tpu:
+            xm.master_print('Scheduler Updates')
+        else:
+            print('Scheduler Updates')
         
         epoch_e = time.time()
         
@@ -404,6 +420,14 @@ def _mp_fn(index, args):
             'scheduler' : scheduler.state_dict(),
             'mode':args.mode
         }, is_best_acc, is_best_alignment, epoch+1, global_rank, args)
+        
+        if args.tpu: 
+            xm.master_print("******************* Save CKPT Finished *******************")
+        
+        if args.tpu:
+            xm.master_print("Epoch {}: {} seconds".format(str(epoch+1), str(epoch_e - epoch_s)))
+        else:
+            print("Epoch {}: {} seconds".format(str(epoch+1), str(epoch_e - epoch_s)))
 
 if __name__ == '__main__':
     # create the command line parser
