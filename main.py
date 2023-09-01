@@ -139,7 +139,7 @@ def validate(val_loader, model, criterion, args, global_rank):
     alignment = AverageMeter('Alignment', ':6.3f')
     progress = ProgressMeter(
         len(val_loader),
-        [batch_time, losses, top1, alignment],
+        [batch_time, cce_losses, top1, alignment],
         prefix='Val: ')
 
     # switch to evaluate mode
@@ -180,7 +180,7 @@ def test(test_loader, model, criterion, args, global_rank):
     alignment = AverageMeter('Alignment', ':6.3f')
     progress = ProgressMeter(
         len(test_loader),
-        [batch_time, losses, top1, alignment],
+        [batch_time, cce_losses, top1, alignment],
         prefix='Val: ')
 
     # switch to evaluate mode
