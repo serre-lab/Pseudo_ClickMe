@@ -288,7 +288,7 @@ def _mp_fn(index, args):
     #     model.parameters(), 
     #     lr = args.learning_rate,
     #     weight_decay = args.weight_decay)
-    # scheduler = StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
+    scheduler = StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
 
     cudnn.benchmark = True
 
