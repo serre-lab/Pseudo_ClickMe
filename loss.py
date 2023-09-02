@@ -151,10 +151,9 @@ def harmonization_eval(model, images, labels, clickme_maps, criterion):
     # compute prediction and loss
     images.requires_grad = True
     output = model(images)
-    cce_loss = criterion(output, labels)
     
     # get correct class scores
-    correct_class_scores = output.gather(1, labels.view(-1, 1))#.squeeze()
+    correct_class_scores = output.gather(1, labels.view(-1, 1)).squeeze()
     device = images.device
     ones_tensor = torch.ones(correct_class_scores.shape).to(device) # scores is a tensor here, need to supply initial gradients of same tensor shape as scores.
     correct_class_scores.backward(ones_tensor, retain_graph=True) # compute the gradients while retain the graph
@@ -165,6 +164,9 @@ def harmonization_eval(model, images, labels, clickme_maps, criterion):
     
     # measure human alignment
     human_alignment = compute_human_alignment(saliency_maps, clickme_maps)
+    
+    # compute val loss
+    cce_loss = criterion(output, labels)
     images.grad.zero_() # reset the gradients
     
     return output, cce_loss, human_alignment
