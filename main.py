@@ -171,7 +171,7 @@ def validate(val_loader, model, criterion, args, global_rank):
             progress.synchronize_between_processes(args.tpu) # synchronize the tensors across all tpus for every step
             progress.display(batch_id + 1, args.tpu)
 
-    return top1.avg, losses.avg, alignment.avg
+    return top1.avg, cce_losses.avg, alignment.avg
 
 def test(test_loader, model, criterion, args, global_rank):
     batch_time = AverageMeter('Time', ':6.3f')
@@ -209,7 +209,7 @@ def test(test_loader, model, criterion, args, global_rank):
         progress.synchronize_between_processes(args.tpu) # synchronize the tensors across all tpus for every step
         progress.display(batch_id + 1, args.tpu)
 
-    return top1.avg, losses.avg, alignment.avg
+    return top1.avg, cce_losses.avg, alignment.avg
 
 def _mp_fn(index, args):
     global device
@@ -531,6 +531,8 @@ if __name__ == '__main__':
     
     # modify the configurations according to args parser
     args = parser.parse_args()
+    
+    assert args.interval > 5, f"Please make sure the interval is greater than 5"
         
     start_time = time.time()
     

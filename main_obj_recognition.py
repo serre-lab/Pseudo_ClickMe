@@ -115,17 +115,10 @@ def train(train_loader, model, criterion, optimizer, epoch, args, global_rank):
             top5.update(acc5[0].item(), images.size(0))
         else:
             if args.epochs <= args.logger_update or (batch_id + 1) % args.logger_update == 0: # otherwise, passing values from TPU to CPU will be very slow
-                # xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, global_rank, "training_loss"))
-                # xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc_train"))
-                # xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, global_rank, "top5_acc_train"))
                 var_names = ["training_loss", "top1_acc_train", "top5_acc_train"]
                 loggers = [losses, top1, top5]
                 values = [loss, acc1[0], acc5[0]]
                 xm.add_step_closure(_xla_logging, args=(loggers, values, images.size(0), args, global_rank, var_names))
-                
-            # xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, global_rank, "training_loss"))
-            # xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc_train"))
-            # xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, global_rank, "top5_acc_train"))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -179,9 +172,6 @@ def validate(val_loader, model, criterion, args, global_rank):
                 top1.update(acc1[0].item(), images.size(0))
                 top5.update(acc5[0].item(), images.size(0))
             else:
-                # xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, global_rank, "val_loss"))
-                # xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank, "top1_acc_val"))
-                # xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, global_rank, "top5_acc_val"))
                 var_names = ["val_loss", "top1_acc_val", "top5_acc_val"]
                 loggers = [losses, top1, top5]
                 values = [loss, acc1[0], acc5[0]]
@@ -228,9 +218,6 @@ def test(test_loader, model, criterion, args, global_rank):
                 top1.update(acc1[0].item(), images.size(0))
                 top5.update(acc5[0].item(), images.size(0))
             else:
-                # xm.add_step_closure(_xla_logging, args=(losses, loss, images.size(0), args, global_rank))
-                # xm.add_step_closure(_xla_logging, args=(top1, acc1[0], images.size(0), args, global_rank))
-                # xm.add_step_closure(_xla_logging, args=(top5, acc5[0], images.size(0), args, global_rank))
                 loggers = [losses, top1, top5]
                 values = [loss, acc1[0], acc5[0]]
                 xm.add_step_closure(_xla_logging, args=(loggers, values, images.size(0), args, global_rank))

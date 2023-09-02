@@ -154,7 +154,7 @@ def harmonization_eval(model, images, labels, clickme_maps, criterion):
     cce_loss = criterion(output, labels)
     
     # get correct class scores
-    correct_class_scores = output.gather(1, labels.view(-1, 1)).squeeze()
+    correct_class_scores = output.gather(1, labels.view(-1, 1))#.squeeze()
     device = images.device
     ones_tensor = torch.ones(correct_class_scores.shape).to(device) # scores is a tensor here, need to supply initial gradients of same tensor shape as scores.
     correct_class_scores.backward(ones_tensor, retain_graph=True) # compute the gradients while retain the graph
