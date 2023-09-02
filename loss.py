@@ -107,7 +107,7 @@ def harmonizer_loss(model, images, labels, clickme_maps,
     # obtain saliency map
     grads = torch.abs(images.grad)
     saliency_maps, _ = torch.max(grads, dim=1, keepdim=True) # (N, C, H, W) -> (N, 1, H, W)
-    images.grad.zero_() # reset the gradients
+    # images.grad.zero_() # reset the gradients
     
     # apply the standardization-cut procedure on heatmaps
     saliency_maps = standardize_cut(saliency_maps.detach())
@@ -153,13 +153,10 @@ def harmonization_eval(model, images, labels, clickme_maps, criterion):
     output = model(images)
     
     # get correct class scores
-    # correct_class_scores = output.gather(1, labels.view(-1, 1)).squeeze()
-    # device = images.device
-    # ones_tensor = torch.ones(correct_class_scores.shape).to(device) # scores is a tensor here, need to supply initial gradients of same tensor shape as scores.
-    # correct_class_scores.backward(ones_tensor, retain_graph=True) # compute the gradients while retain the graph
-    
-    correct_class_scores = output.gather(1, labels.view(-1, 1)).squeeze().sum()
-    correct_class_scores.backward(retain_graph=True)
+    correct_class_scores = output.gather(1, labels.view(-1, 1)).squeeze()
+    device = images.device
+    ones_tensor = torch.ones(correct_class_scores.shape).to(device) # scores is a tensor here, need to supply initial gradients of same tensor shape as scores.
+    correct_class_scores.backward(ones_tensor, retain_graph=False) # compute the gradients 
     
     # compute saliency maps
     grads = torch.abs(images.grad)
