@@ -95,7 +95,7 @@ def harmonizer_loss(model, images, labels, clickme_maps,
     model.train()
        
     # compute prediction
-    images.requires_grad = True
+    images.requires_grad_()
     output = model(images)
 
     # get correct class scores
@@ -107,7 +107,6 @@ def harmonizer_loss(model, images, labels, clickme_maps,
     # obtain saliency map
     grads = torch.abs(images.grad)
     saliency_maps, _ = torch.max(grads, dim=1, keepdim=True) # (N, C, H, W) -> (N, 1, H, W)
-    # images.grad.zero_() # reset the gradients
     
     # apply the standardization-cut procedure on heatmaps
     saliency_maps = standardize_cut(saliency_maps.detach())
@@ -126,6 +125,10 @@ def harmonizer_loss(model, images, labels, clickme_maps,
     # weight_loss = lambda_weights * torch.norm(model.parameters(), 2)**2 # weight_decay in optimizer
 
     harmonization_loss = cce_loss + pyramidal_loss * lambda_harmonization # + weight_loss
+    
+    # reset the gradients
+    images.requires_grad_(False)
+    images.grad.zero_() 
 
     return harmonization_loss, cce_loss
 
@@ -149,7 +152,7 @@ def harmonization_eval(model, images, labels, clickme_maps, criterion):
     model.eval()
     
     # compute prediction and loss
-    images.requires_grad = True
+    images.requires_grad_()
     output = model(images)
     
     # get correct class scores
@@ -167,7 +170,10 @@ def harmonization_eval(model, images, labels, clickme_maps, criterion):
     
     # compute val loss
     cce_loss = criterion(output, labels)
-    images.grad.zero_() # reset the gradients
+    
+    # reset the gradients
+    images.requires_grad_(False)
+    images.grad.zero_() 
     
     return output, cce_loss, human_alignment
 
