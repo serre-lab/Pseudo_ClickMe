@@ -417,7 +417,7 @@ def _mp_fn(index, args):
         
         epoch_e = time.time()
         
-        # if epoch < args.epochs - 20: continue
+        if epoch < args.epochs - 10: continue
         if args.tpu:
             xm.master_print("******************* Save CKPT Started *******************")
 
