@@ -148,7 +148,7 @@ def compute_human_alignment(predicted_heatmaps, clickme_heatmaps):
     scores = spearman_correlation(predicted_heatmaps, clickme_heatmaps)
     human_alignment = scores.mean() / HUMAN_SPEARMAN_CEILING
 
-    return human_alignment
+    return human_alignment.to(clickme_heatmaps.device)
 
 def get_world_size(isXLA):
     if isXLA:
@@ -266,4 +266,105 @@ def save_checkpoint(state, is_best_acc, is_best_alignment, epoch, global_rank, a
             xm.master_print("Removed ", "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
         else:
             print("Removed ", "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
+            
+def save_checkpoint_accelerator(state, is_best_acc, is_best_alignment, epoch, accelerator, args):
+    '''
+    /Checkpoints/
+    |__resnet50
+    |    |__imagenet
+    |    |    |__ckpt_0.pth
+    |    |    |__best.pth
+    |    |__mix
+    |    |__pseudo
+    |...
+    ''' 
+     
+    pathlib.Path(args.weights).mkdir(parents=True, exist_ok=True) # "/Checkpoints/"
+        
+    model_dir = os.path.join(args.weights, args.model_name) # "/Checkpoints/resnet50"
+    pathlib.Path(model_dir).mkdir(parents=True, exist_ok=True)
+        
+    save_dir = os.path.join(model_dir, args.mode) # "Checkpoints/resnet50/imagenet/"
+    pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
     
+    filename = os.path.join(save_dir, "ckpt_" + str(epoch) + ".pth.tar")
+    accelerator.save(state, filename)
+ 
+    if is_best_acc:
+        best_filename = os.path.join(save_dir, 'best_acc.pth.tar') # "Checkpoints/resnet50/imagenet/best_acc.pth"
+        accelerator.save(state, best_filename)
+        accelerator.print("The best_acc model is saved at EPOCH", str(epoch))
+            
+    if is_best_alignment:
+        best_filename = os.path.join(save_dir, 'best_alignment.pth.tar') # "/mnt/disks/bucket/pseudo_clickme/resnet50/imagenet/best_acc.pth"
+        accelerator.save(state, best_filename)
+        accelerator.print("The best_alignment model is saved at EPOCH", str(epoch))
+        
+    rmfile = os.path.join(save_dir, "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
+    if accelerator.is_main_process and os.path.exists(rmfile):
+        os.remove(rmfile)
+        accelerator.print("Removed ", "ckpt_" + str(epoch - args.ckpt_remain) + ".pth.tar")
+        
+class ProgressMeterAcc(object):
+    def __init__(self, num_batches, meters, prefix=""):
+        self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
+        self.meters = meters
+        self.prefix = prefix
+
+    def display(self, batch, accelerator):
+        entries = [self.prefix + self.batch_fmtstr.format(batch)]
+        entries += [str(meter) for meter in self.meters]
+        if accelerator:
+            accelerator.print('  '.join(entries))
+        return 
+
+    def _get_batch_fmtstr(self, num_batches):
+        num_digits = len(str(num_batches // 1))
+        fmt = '{:' + str(num_digits) + 'd}'
+        return '[' + fmt + '/' + fmt.format(num_batches) + ']'
+    
+    def synchronize_between_processes(self, accelerator):
+        for meter in self.meters:
+            meter.synchronize_between_processes(accelerator)
+        return
+
+class AverageMeterAcc(object):
+    """Computes and stores the average and current value"""
+
+    def __init__(self, name, fmt=':f'):
+        self.name = name
+        self.fmt = fmt
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+    def __str__(self):
+        fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
+        return fmtstr.format(**self.__dict__)
+    
+    def synchronize_between_processes(self, accelerator):
+        c = accelerator.reduce(torch.tensor(self.count, dtype=torch.float64).to(accelerator.device), reduction="mean")
+        s = accelerator.reduce(torch.tensor(self.sum, dtype=torch.float64).to(accelerator.device), reduction="mean")
+        self.count = int(c.item())
+        self.sum = s.item()
+        self.avg = self.sum / self.count
+        return
+        
+        # t = torch.tensor([self.count, self.sum], dtype=torch.float64, device='cuda')
+        # dist.barrier()
+        # dist.all_reduce(t)
+        # t = t.tolist()
+        # self.count = int(t[0])
+        # self.sum = t[1]
+        # # self.avg = self.sum / self.count
+        # return

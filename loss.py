@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from pyramid import pyramidal_representation
 from utils import compute_human_alignment
 
-def standardize_cut(heatmaps, axis=(2, 3), epsilon=1e-5):
+def standardize_cut(heatmaps, axis=(2, 3), epsilon=1e-6):
     """
     Standardize the heatmaps (zero mean, unit variance) and apply ReLU.
 
@@ -26,9 +26,11 @@ def standardize_cut(heatmaps, axis=(2, 3), epsilon=1e-5):
 
     means = torch.mean(heatmaps, dim=axis, keepdim=True)
     stds = torch.std(heatmaps, dim=axis, keepdim=True)
+    
     heatmaps = (heatmaps - means) / (stds + epsilon)
 
-    heatmaps = torch.relu(heatmaps)
+    heatmaps = torch.relu(heatmaps) # postive part of the heatmap
+    
     return heatmaps
 
 def mse(heatmaps_a, heatmaps_b):
@@ -96,17 +98,18 @@ def harmonizer_loss(model, images, labels, clickme_maps,
        
     # compute prediction
     images.requires_grad_()
-    output = model(images)
+    outputs = model(images)
 
     # get correct class scores
-    correct_class_scores = output.gather(1, labels.view(-1, 1)).squeeze()
+    correct_class_scores = outputs.gather(1, labels.view(-1, 1)).squeeze()
     device = images.device
     ones_tensor = torch.ones(correct_class_scores.shape).to(device) # scores is a tensor here, need to supply initial gradients of same tensor shape as scores.
     correct_class_scores.backward(ones_tensor, retain_graph=True) # compute the gradients while retain the graph
     
     # obtain saliency map
     grads = torch.abs(images.grad)
-    saliency_maps, _ = torch.max(grads, dim=1, keepdim=True) # (N, C, H, W) -> (N, 1, H, W)
+    saliency_maps = torch.mean(grads, dim=1, keepdim=True) #  (N, 1, H, W)
+    # saliency_maps, _ = torch.max(grads, dim=1, keepdim=True) # (N, C, H, W) -> (N, 1, H, W)
     
     # apply the standardization-cut procedure on heatmaps
     saliency_maps = standardize_cut(saliency_maps.detach())
@@ -121,7 +124,7 @@ def harmonizer_loss(model, images, labels, clickme_maps,
     
     # Compute and combine the losses
     pyramidal_loss = pyramidal_mse(saliency_maps, clickme_maps)
-    cce_loss = criterion(output, labels)
+    cce_loss = criterion(outputs, labels)
     # weight_loss = lambda_weights * torch.norm(model.parameters(), 2)**2 # weight_decay in optimizer
 
     harmonization_loss = cce_loss + pyramidal_loss * lambda_harmonization # + weight_loss
@@ -159,7 +162,7 @@ def harmonization_eval(model, images, labels, clickme_maps, criterion):
     correct_class_scores = output.gather(1, labels.view(-1, 1)).squeeze()
     device = images.device
     ones_tensor = torch.ones(correct_class_scores.shape).to(device) # scores is a tensor here, need to supply initial gradients of same tensor shape as scores.
-    correct_class_scores.backward(ones_tensor, retain_graph=False) # compute the gradients 
+    correct_class_scores.backward(ones_tensor, retain_graph=True) # compute the gradients 
     
     # compute saliency maps
     grads = torch.abs(images.grad)

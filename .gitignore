@@ -1,0 +1,4 @@
+# Ignore a specific directory and its contents
+./__pycache__
+./wandb
+.DS_Store
