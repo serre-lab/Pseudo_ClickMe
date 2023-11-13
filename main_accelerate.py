@@ -3,11 +3,16 @@ Terminal cmd:
 - init
     accelerate config
 - Train
-    accelerate launch main_accelerate.py -dd '/media/data_cifs/projects/prj_pseudo_clickme/Dataset/full' -mn 'resnet50' -md "clickme" -ep 100 -bs 256 -pt True -wb True
-    accelerate launch main_accelerate.py -mn 'resnet50' -md  "clickme" -ep 5 -bs 4 -pt True
+    accelerate launch --main_process_port 29501 main_accelerate.py -dd '/media/data_cifs/projects/prj_pseudo_clickme/Dataset/full' -mn 'resnet50' -md "clickme" -ep 100 -bs 256 -pt True -wb True
+    accelerate launch main_accelerate.py -mn 'resnet50' -md  "clickme" -ep 10 -bs 8 -pt True
+    accelerate launch --main_process_port 29501 main_accelerate.py -mn 'resnet50' -md  "clickme" -ep 1 -bs 8 -pt True
 - Eval
-    accelerate launch main_accelerate.py -dd '/media/data_cifs/projects/prj_pseudo_clickme/Dataset/full' -mn 'resnet50' -md "clickme" -ep 100 -bs 256 -ev True -rs True
-    accelerate launch main_accelerate.py -mn 'resnet50' -md  "clickme" -ep 10 -bs 4 -pt True -ev True -rs True
+    accelerate launch main_accelerate.py -dd '/media/data_cifs/projects/prj_pseudo_clickme/Dataset/full' -mn 'resnet50' -md "clickme" -bs 256 -ev True -rs True
+    accelerate launch main_accelerate.py -dd '/media/data_cifs/projects/prj_pseudo_clickme/Dataset/full' -mn 'resnet50' -md "clickme" -bs 64 -ev True -rs True -pt True
+    accelerate launch --main_process_port 29501 main_accelerate.py -dd '/media/data_cifs/projects/prj_pseudo_clickme/Dataset/full' -mn 'resnet50' -md "clickme" -bs 64 -ev True -rs True -bt "best_acc"
+    accelerate launch --main_process_port 29501 main_accelerate.py -dd '/media/data_cifs/projects/prj_pseudo_clickme/Dataset/full' -mn 'resnet50' -md "clickme" -bs 64 -ev True -rs True -bt "best_alignment"
+    accelerate launch --main_process_port 29501 main_accelerate.py -mn 'resnet50' -md  "clickme" -bs 4 -pt True -ev True -rs True
+    accelerate launch --main_process_port 29501 main_accelerate.py -mn 'resnet50' -md  "clickme" -bs 4 -pt True -ev True
 '''
 
 import os
@@ -30,34 +35,35 @@ import torch.nn as nn
 import torch.utils.data
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, CosineAnnealingWarmRestarts
 from torch.utils.data import Subset, DataLoader
 
 import utils
 from dataset import ClickMe
 from metrics import accuracy
 from loss import harmonizer_loss, harmonization_eval
-from utils import AverageMeterAcc, ProgressMeterAcc, compute_human_alignment, save_checkpoint_accelerator
+from utils import AverageMeterAcc, ProgressMeterAcc, compute_human_alignment, save_checkpoint_accelerator, CosineAnnealingWithWarmup, EarlyStopping
 
-def accelerate_logging(loggers, values, batch_size, accelerator, args, var_names=None):
+def accelerate_logging(loggers, values, batch_size, accelerator, args, var_names=None, status="train", isLastBatch=False):
     pairs = {}
     if not var_names: var_names = [None] * len(values)
     for logger, value, var_name in zip(loggers, values, var_names):
         val = value.item()
         logger.update(val, batch_size)
         if var_name: pairs[var_name] = val
-        
-    if accelerator.is_main_process and args.wandb and var_names: # just update values on the main process
-        for var_name, value in zip(var_names, values):
-            wandb.log(pairs)
+
+    if status == "train" or (status == "val" and isLastBatch):
+        if accelerator.is_main_process and args.wandb and var_names: # just update values on the main process
+            for var_name, value in zip(var_names, values):
+                wandb.log(pairs)
     
 def train(train_loader, model, criterion, optimizer, lr_scheduler, accelerator, args):
-    cce_losses = AverageMeterAcc('CCE_Loss', ':.2e')
-    hmn_losses = AverageMeterAcc('HMN_Loss', ':.2e')
-    top1 = AverageMeterAcc('Acc@1', ':6.3f')
-    progress = ProgressMeterAcc(
+    train_cce_losses = AverageMeterAcc('CCE_Loss', ':.2f')
+    train_hmn_losses = AverageMeterAcc('HMN_Loss', ':.2f')
+    train_top1 = AverageMeterAcc('Acc@1', ':6.3f')
+    train_progress = ProgressMeterAcc(
         len(train_loader),
-        [cce_losses, hmn_losses, top1],
+        [train_cce_losses, train_hmn_losses, train_top1],
         prefix="Train: ")
     
     # switch to train mode
@@ -87,35 +93,42 @@ def train(train_loader, model, criterion, optimizer, lr_scheduler, accelerator, 
         
         # Log
         acc1 = accuracy(outputs, targets, topk=(1,))[0]
-        var_names = ["hmn_loss", "train_cce_loss", "top1_acc"] if not args.evaluate else None
-        loggers = [hmn_losses, cce_losses, top1]
+        var_names = ["train_hmn_loss", "train_cce_loss", "train_top1_acc"] if not args.evaluate else None
+        loggers = [train_hmn_losses, train_cce_losses, train_top1]
         values = [hmn_loss, cce_loss, acc1[0]]
-        accelerate_logging(loggers, values, images.size(0), accelerator, args, var_names)
+        accelerate_logging(loggers, values, images.size(0), accelerator, args, var_names=var_names)
         
         # Log learning rate
         if accelerator.is_main_process and args.wandb: # just update values on the main process
             wandb.log({"lr": lr_scheduler.get_last_lr()[0]})
 
+        # print(f"[Train] Acc@1: {acc1[0]:.4f} %, Harmonization Loss: {hmn_loss:.4f}, CCE Loss: {cce_loss:.4f}")
+
         # Synchronize results
         accelerator.wait_for_everyone()
-        progress.synchronize_between_processes(accelerator) # synchronize the tensors across all tpus for every step
+        assert accelerator.sync_gradients
+        train_progress.synchronize_between_processes(accelerator) # synchronize the tensors across all tpus for every step
         
     # progress.display(len(train_loader), accelerator)
-    return top1.avg, hmn_losses.avg, cce_losses.avg
+    avg_top1, avg_hmn_loss, avg_cce_loss = train_top1.avg, train_hmn_losses.avg, train_cce_losses.avg
+    del train_cce_losses, train_hmn_losses, train_top1, train_progress
+    return avg_top1, avg_hmn_loss, avg_cce_loss
 
 def evaluate(eval_loader, model, criterion, accelerator, args):
-    cce_losses = AverageMeterAcc('CCE-Loss', ':.2e')
-    top1 = AverageMeterAcc('Acc@1', ':6.2f')
-    alignment = AverageMeterAcc('Alignment', ':6.3f')
-    progress = ProgressMeterAcc(
+
+    eval_cce_losses = AverageMeterAcc('CCE_Loss', ':.2f')
+    eval_top1 = AverageMeterAcc('Acc@1', ':6.2f')
+    eval_alignment = AverageMeterAcc('Alignment', ':6.3f')
+    eval_progress = ProgressMeterAcc(
         len(eval_loader),
-        [cce_losses, top1, alignment],
+        [eval_cce_losses, eval_top1, eval_alignment],
         prefix='Eval:  ')
     
     # switch to evaluate mode
     model.eval()
     
     device = accelerator.device
+    status = "test" if args.evaluate else "val"
     
     if accelerator.is_main_process:
         pbar = tqdm(eval_loader, desc="Eval ", position=0, leave=True)
@@ -129,17 +142,19 @@ def evaluate(eval_loader, model, criterion, accelerator, args):
         
         # Log
         acc1 = accuracy(outputs, targets, topk=(1,))[0]
-        var_names = ["val_cce_loss", "alignment", "top1_acc"]
-        loggers = [cce_losses, alignment, top1]
+        var_names = ["eval_cce_loss", "eval_alignment", "eval_top1_acc"]
+        loggers = [eval_cce_losses, eval_alignment, eval_top1]
         values = [cce_loss, alignment_score, acc1[0]]
-        accelerate_logging(loggers, values, images.size(0), accelerator, args, var_names)
+        accelerate_logging(loggers, values, images.size(0), accelerator, args, var_names=var_names, status=status, isLastBatch=batch_id==(len(eval_loader)-1))
         
         # Synchronize results
         accelerator.wait_for_everyone()
-        progress.synchronize_between_processes(accelerator) # synchronize the tensors across all tpus for every step
+        eval_progress.synchronize_between_processes(accelerator) # synchronize the tensors across all tpus for every step
         
     # progress.display(len(eval_loader), accelerator)
-    return top1.avg, cce_losses.avg, alignment.avg
+    avg_top1, avg_cce_loss, avg_alignment = eval_top1.avg, eval_cce_losses.avg, eval_alignment.avg
+    del eval_cce_losses, eval_top1, eval_alignment, eval_progress
+    return avg_top1, avg_cce_loss, avg_alignment
 
 def run(args):
     start_time = time.time()
@@ -185,19 +200,21 @@ def run(args):
         
         # Continue training
         if args.resume or args.evaluate:
-            if os.path.isfile(args.resume):
-                checkpoint = torch.load(os.path.join(args.weights, args.model_name, args.mode, 'best.pth.tar'))
+            ckpt_path = os.path.join(args.weights, args.model_name, args.mode, args.best_model + '.pth.tar')
+            if os.path.isfile(ckpt_path):
+                checkpoint = torch.load(ckpt_path)
                 model.load_state_dict(checkpoint['state_dict'])
-                accelerator.print("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
+                accelerator.print("=> loaded checkpoint '{}' (epoch {})".format(ckpt_path, checkpoint['epoch']))
             else:
                 accelerator.print("=> no checkpoint found at '{}'".format(args.resume))
                 return
             
      # Initialization
     if args.evaluate:
-        test_file_paths = glob.glob(os.path.join(args.data_dir, args.test_clickme_paths))
+        test_file_paths = glob.glob(os.path.join(args.data_dir, args.test_clickme_paths)) + glob.glob(os.path.join(args.data_dir, args.val_clickme_paths))
+        # test_file_paths = glob.glob(os.path.join(args.data_dir, args.test_clickme_paths)) 
         test_dataset = ClickMe(test_file_paths, is_training=False)
-        test_loader = DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
+        test_loader = DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=False)
         
         criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
         model, criterion, test_loader = accelerator.prepare(model, criterion, test_loader)
@@ -219,45 +236,54 @@ def run(args):
             
         train_dataset = ClickMe(train_file_paths, is_training=True)
         val_dataset = ClickMe(val_file_paths, is_training=False)
-        
+
         train_loader = DataLoader(train_dataset, batch_size = args.batch_size, num_workers = args.num_workers, pin_memory = False, drop_last = True)
         val_loader = DataLoader(val_dataset, batch_size = args.batch_size, num_workers = args.num_workers, pin_memory = False, drop_last = True)
-        
+
         # Instantiate optimizer and learning rate scheduler
         criterion = nn.CrossEntropyLoss(label_smoothing=0.1, reduction='mean')
         optimizer = torch.optim.AdamW(params=model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay, amsgrad=False)
         # optimizer = torch.optim.AdamW(params=model.parameters(), lr=0, weight_decay=args.weight_decay, amsgrad=False)
         steps_per_epoch = len(train_loader) 
-        lr_scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=args.epochs*steps_per_epoch, eta_min=1e-6)
-        # lr_scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=args.epochs*steps_per_epoch, eta_min=0)  
+        # lr_scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=args.epochs*steps_per_epoch, eta_min=1e-6)
+        # lr_scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=args.epochs*steps_per_epoch, eta_min=0) 
+        # lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=args.epochs*steps_per_epoch, T_mult=1, eta_min=1e-6, last_epoch=-1)
+        lr_scheduler = CosineAnnealingWithWarmup(
+            optimizer = optimizer, min_lrs = [1e-6], first_cycle_steps = args.epochs*steps_per_epoch, warmup_steps = 5 * steps_per_epoch, gamma = 0.9)
         
         model, optimizer, lr_scheduler, criterion, train_loader, val_loader = accelerator.prepare(
             model, optimizer, lr_scheduler, criterion, train_loader, val_loader)
     
     if args.evaluate:
+        model.eval()
         test_acc, test_loss, alignment_score = evaluate(test_loader, model, criterion, accelerator, args)
-        # test_acc, test_loss, alignment_score = evaluate(test_loader, model, criterion, accelerator, args)
-        accelerator.print(f"The model accuracy on the test set is: {test_acc:.2f} %; alignment score is: {alignment_score:.2f} %")
+        accelerator.print(f"[Test: ] Accuracy: {test_acc:.2f} %; alignment score is: {alignment_score*100:.2f} %; test_cce_loss: {test_loss:.4f}")
         return
     else:
+        if accelerator.is_main_process:
+            early_stopping = EarlyStopping(threshold=10, patience=5)
+
         for epoch in range(args.epochs):
             accelerator.print('Epoch: [%d | %d]' % (epoch + 1, args.epochs))
                 
             epoch_s = time.time()
 
+            # import ipdb; ipdb.set_trace()
+
             # train for one epoch
             train_acc, train_hmn_loss, train_cce_loss = train(train_loader, model, criterion, optimizer, lr_scheduler, accelerator, args)
-            # train_acc, train_hmn_loss, train_cce_loss = train(train_loader, model, criterion, optimizer, lr_scheduler, accelerator, args)
             accelerator.print(f"[Train] Acc@1: {train_acc:.4f} %, Harmonization Loss: {train_hmn_loss:.4f}, CCE Loss: {train_cce_loss:.4f}")
 
             # evaluate on validation set
-            val_acc, val_loss, alignment_score = evaluate(val_loader, model, criterion, accelerator, args)
-            # val_acc, val_loss, alignment_score = evaluate(val_loader, model, criterion, accelerator, args)
-            accelerator.print(f"[Val]   Acc@1: {val_acc:.4f} %, Alignment Score: {alignment_score*100:.4f} %, CCE Loss: {val_loss:.4f}")
+            val_acc, val_cce_loss, alignment_score = evaluate(val_loader, model, criterion, accelerator, args)
+            accelerator.print(f"[Val]   Acc@1: {val_acc:.4f} %, Alignment Score: {alignment_score*100:.4f} %, CCE Loss: {val_cce_loss:.4f}")
             
             epoch_e = time.time()
                         
             accelerator.print("Epoch {}: {} secs".format(str(epoch+1), str(int(epoch_e - epoch_s))))
+
+            # Skip warming up stage
+            if epoch <= 5: continue 
             
             # save model for best_acc model
             is_best_acc = val_acc > best_acc
@@ -279,6 +305,10 @@ def run(args):
             }, is_best_acc, is_best_alignment, epoch+1, accelerator, args)
             
             accelerator.print("")
+
+            if accelerator.is_main_process and early_stopping(train_acc, val_acc):
+                accelerator.print("Early stopping triggered")
+                break
                 
     if accelerator.is_main_process:
         end_time = time.time()
@@ -311,6 +341,13 @@ if __name__ == '__main__':
     parser.add_argument("-wt", "--weights", required = False, type = str,
                         default = '/media/data_cifs/projects/prj_pseudo_clickme/Checkpoints',
                         help = "please enter a directory save checkpoints")
+    parser.add_argument("-bt", "--best_model", required=False, type = str,
+                        default = 'best_acc', 
+                        choices = [
+                            "best_acc",  
+                            "best_alignment",
+                        ],
+                        help="'best_acc', 'best_alignment'?")
     parser.add_argument("-mn", "--model_name", required = False, type = str,
                         default = 'resnet50',
                         help="Please specify a model architecture according to TIMM")
@@ -329,7 +366,7 @@ if __name__ == '__main__':
                         help="start epoch is usually used with 'resume'")
     parser.add_argument("-bs", "--batch_size", required=False, type = int,default = 4,
                         help="Batch Size")
-    parser.add_argument("-lr", "--learning_rate", required=False, type = float, default = 0.01,
+    parser.add_argument("-lr", "--learning_rate", required=False, type = float, default = 1e-5,
                         help="Learning Rate")
     parser.add_argument("-mt", "--momentum", required=False, type = float, default = 0.9,
                         help="SGD momentum")
@@ -337,11 +374,11 @@ if __name__ == '__main__':
                         help="learning rate scheduler")
     parser.add_argument("-gm", "--gamma", required=False, type = float, default = 0.1,
                         help="scheduler parameters, which decides the change of learning rate ")
-    parser.add_argument("-wd", "--weight_decay", required=False, type = int, default = 1e-5,
+    parser.add_argument("-wd", "--weight_decay", required=False, type = float, default = 1e-3,
                         help="weight decay, regularization")
     parser.add_argument("-iv", "--interval", required=False, type = int, default = 2,
                         help="Step interval for printing logs")
-    parser.add_argument("-nw", "--num_workers", required=False, type = int, default = 4,
+    parser.add_argument("-nw", "--num_workers", required=False, type = int, default = 8,
                         help="number of workers in dataloader")
     parser.add_argument("-gid", "--gpu_id", required=False, type = int, default = 1,
                         help="specify gpu id for single gpu training")

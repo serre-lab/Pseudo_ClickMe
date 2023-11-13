@@ -112,7 +112,7 @@ def harmonizer_loss(model, images, labels, clickme_maps,
     # saliency_maps, _ = torch.max(grads, dim=1, keepdim=True) # (N, C, H, W) -> (N, 1, H, W)
     
     # apply the standardization-cut procedure on heatmaps
-    saliency_maps = standardize_cut(saliency_maps.detach())
+    saliency_maps = standardize_cut(saliency_maps)
     clickme_maps = standardize_cut(clickme_maps)
     
     # re-normalize before pyramidal
@@ -156,10 +156,14 @@ def harmonization_eval(model, images, labels, clickme_maps, criterion):
     
     # compute prediction and loss
     images.requires_grad_()
-    output = model(images)
+    outputs = model(images)
+
+    # compute val loss
+    with torch.no_grad():
+        cce_loss = criterion(outputs, labels)
     
     # get correct class scores
-    correct_class_scores = output.gather(1, labels.view(-1, 1)).squeeze()
+    correct_class_scores = outputs.gather(1, labels.view(-1, 1)).squeeze()
     device = images.device
     ones_tensor = torch.ones(correct_class_scores.shape).to(device) # scores is a tensor here, need to supply initial gradients of same tensor shape as scores.
     correct_class_scores.backward(ones_tensor, retain_graph=True) # compute the gradients 
@@ -171,14 +175,11 @@ def harmonization_eval(model, images, labels, clickme_maps, criterion):
     # measure human alignment
     human_alignment = compute_human_alignment(saliency_maps, clickme_maps)
     
-    # compute val loss
-    cce_loss = criterion(output, labels)
-    
     # reset the gradients
     images.requires_grad_(False)
     images.grad.zero_() 
     
-    return output, cce_loss, human_alignment
+    return outputs, cce_loss, human_alignment
 
 if __name__ == "__main__":
     hmp_a, hmp_b = torch.rand(4, 1, 224, 224), torch.rand(4, 1, 224, 224)

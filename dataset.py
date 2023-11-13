@@ -4,28 +4,41 @@ import glob
 import torch
 import time
 import math
+import random
 
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 
 data_transforms = {
     'aug': transforms.Compose([
-        transforms.RandomResizedCrop(size=224, scale=(0.95, 1.0)),  # Randomly crop and resize the image tensor
+        transforms.RandomResizedCrop(size=224, scale=(0.9, 1.0)),  # Randomly crop and resize the image tensor
         transforms.RandomHorizontalFlip(p=0.5),  # Randomly flip the image horizontally with a probability of 0.5
-        # transforms.RandomVerticalFlip(p=0.5),  # Randomly flip the image vertically with a probability of 0.5
-        transforms.RandomRotation(degrees=(-10, 10)),
+        # transforms.RandomVerticalFlip(p=0.5),    # Randomly flip the image vertically with a probability of 0.5
+        transforms.RandomRotation(degrees=(-15, 15)),
     ]),
     'norm': transforms.Compose([
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]),   
 }
-                
+
+class AddGaussianNoise:
+    def __init__(self, mean=0., std=1.):
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, tensor):
+        noise = torch.randn(tensor.size()) * self.std + self.mean
+        return tensor + noise
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
+
+           
 class ClickMe(Dataset):
     def __init__(self, file_paths, is_training=True):
         super(Dataset).__init__()
         self.file_paths = file_paths
         self.is_training = is_training
-        
         
     def __getitem__(self, index):
         data = torch.load(self.file_paths[index])
@@ -41,7 +54,12 @@ class ClickMe(Dataset):
             stacked_img = data_transforms['aug'](stacked_img) # Apply data augmentation
             img, hmp = stacked_img[:-1, :, :], stacked_img[-1:, :, :]
             # print(img.shape, hmp.shape) # torch.Size([3, 224, 224]) torch.Size([1, 224, 224])
-            
+
+            # Noise Injection
+            # if 0.5 >= random.uniform(0, 1): 
+            #     noise_transform = AddGaussianNoise(mean=0., std=random.uniform(0, 0.5))
+            #     img = noise_transform(img)
+
         img = data_transforms['norm'](img)  # Apply ImageNet mean and std
         return img, hmp, label
                 
