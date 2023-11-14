@@ -249,7 +249,7 @@ def run(args):
         # lr_scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=args.epochs*steps_per_epoch, eta_min=0) 
         # lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=args.epochs*steps_per_epoch, T_mult=1, eta_min=1e-6, last_epoch=-1)
         lr_scheduler = CosineAnnealingWithWarmup(
-            optimizer = optimizer, min_lrs = [1e-6], first_cycle_steps = args.epochs*steps_per_epoch, warmup_steps = 5 * steps_per_epoch, gamma = 0.9)
+            optimizer = optimizer, min_lrs = [1e-6], first_cycle_steps = args.epochs*steps_per_epoch, warmup_steps = args.warmup*steps_per_epoch, gamma = 0.9)
         
         model, optimizer, lr_scheduler, criterion, train_loader, val_loader = accelerator.prepare(
             model, optimizer, lr_scheduler, criterion, train_loader, val_loader)
@@ -283,7 +283,7 @@ def run(args):
             accelerator.print("Epoch {}: {} secs".format(str(epoch+1), str(int(epoch_e - epoch_s))))
 
             # Skip warming up stage
-            if epoch <= 5: continue 
+            if epoch <= args.warmup: continue 
             
             # save model for best_acc model
             is_best_acc = val_acc > best_acc
@@ -374,7 +374,7 @@ if __name__ == '__main__':
                         help="learning rate scheduler")
     parser.add_argument("-gm", "--gamma", required=False, type = float, default = 0.1,
                         help="scheduler parameters, which decides the change of learning rate ")
-    parser.add_argument("-wd", "--weight_decay", required=False, type = float, default = 1e-3,
+    parser.add_argument("-wd", "--weight_decay", required=False, type = float, default = 1e-4,
                         help="weight decay, regularization")
     parser.add_argument("-iv", "--interval", required=False, type = int, default = 2,
                         help="Step interval for printing logs")
@@ -393,6 +393,8 @@ if __name__ == '__main__':
     parser.add_argument("-ev", "--evaluate", required=False, type = str, default = False,
                         action = utils.str2bool,
                         help="Whether to evaluate a model")
+    parser.add_argument("-wu", "--warmup", required=False, type = int, default = 3,
+                        help="specify warmup epochs, usually <= 5")
     parser.add_argument("-pt", "--pretrained", required=False, type = str, default = False,
                         action = utils.str2bool,
                         help="Whether to use pretrained model from TIMM")
