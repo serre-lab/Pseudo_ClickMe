@@ -80,16 +80,42 @@ def train(train_loader, model, criterion, optimizer, lr_scheduler, accelerator, 
         images, heatmaps, targets = images.to(device, non_blocking=True), heatmaps.to(device, non_blocking=True), targets.to(device, non_blocking=True)
 
         # compute prediction output
-        outputs = model(images)
+        # outputs = model(images)
+
+        # import ipdb; ipdb.set_trace()
         
         # compute losses
-        hmn_loss, cce_loss = harmonizer_loss(model, images, targets, heatmaps, criterion)
+        hmn_loss, cce_loss, outputs = harmonizer_loss(model, images, targets, heatmaps, criterion, accelerator=accelerator)
         
+        # log gradient norm
+        optimizer.zero_grad()
+        pyramid_loss = hmn_loss - cce_loss
+        accelerator.backward(pyramid_loss, retain_graph=True)
+        pyramid_grad_norm = utils.compute_gradient_norm(model)
+        # accelerator.print(pyramid_loss, format(pyramid_grad_norm, '.6e'))
+        
+        optimizer.zero_grad()
+        accelerator.backward(cce_loss, retain_graph=True)
+        cce_grad_norm = utils.compute_gradient_norm(model)
+        # accelerator.print(pyramid_loss, cce_loss, format(pyramid_grad_norm, '.6f'), cce_grad_norm)
+
         # Update 
         optimizer.zero_grad()
         accelerator.backward(hmn_loss)
+
+        hmn_grad_norm = utils.compute_gradient_norm(model)
+        # accelerator.print(format(hmn_grad_norm, '.6e'))
+
         optimizer.step()
         lr_scheduler.step()
+
+        # log gradient norm
+        if accelerator.is_main_process and args.wandb: # just update values on the main process
+            wandb.log({
+                "pyramid_grad_norm": pyramid_grad_norm,
+                "cce_grad_norm": cce_grad_norm,
+                "hmn_grad_norm": hmn_grad_norm,
+            })
         
         # Log
         acc1 = accuracy(outputs, targets, topk=(1,))[0]
@@ -138,7 +164,7 @@ def evaluate(eval_loader, model, criterion, accelerator, args):
     for batch_id, (images, heatmaps, targets) in enumerate(pbar):
         images, heatmaps, targets = images.to(device, non_blocking=True), heatmaps.to(device, non_blocking=True), targets.to(device, non_blocking=True)
         
-        outputs, cce_loss, alignment_score = harmonization_eval(model, images, targets, heatmaps, criterion)
+        outputs, cce_loss, alignment_score = harmonization_eval(model, images, targets, heatmaps, criterion, accelerator=accelerator)
         
         # Log
         acc1 = accuracy(outputs, targets, topk=(1,))[0]
@@ -374,7 +400,7 @@ if __name__ == '__main__':
                         help="learning rate scheduler")
     parser.add_argument("-gm", "--gamma", required=False, type = float, default = 0.1,
                         help="scheduler parameters, which decides the change of learning rate ")
-    parser.add_argument("-wd", "--weight_decay", required=False, type = float, default = 1e-4,
+    parser.add_argument("-wd", "--weight_decay", required=False, type = float, default = 1e-3,
                         help="weight decay, regularization")
     parser.add_argument("-iv", "--interval", required=False, type = int, default = 2,
                         help="Step interval for printing logs")
@@ -393,7 +419,7 @@ if __name__ == '__main__':
     parser.add_argument("-ev", "--evaluate", required=False, type = str, default = False,
                         action = utils.str2bool,
                         help="Whether to evaluate a model")
-    parser.add_argument("-wu", "--warmup", required=False, type = int, default = 3,
+    parser.add_argument("-wu", "--warmup", required=False, type = int, default = 5,
                         help="specify warmup epochs, usually <= 5")
     parser.add_argument("-pt", "--pretrained", required=False, type = str, default = False,
                         action = utils.str2bool,

@@ -76,7 +76,7 @@ def pyramidal_mse(true_heatmaps, predicted_heatmaps, nb_levels=5):
     return loss
 
 def harmonizer_loss(model, images, labels, clickme_maps,
-                    criterion, lambda_weights=1e-5, lambda_harmonization=1.0):
+                    criterion, lambda_weights=1e-5, lambda_harmonization=1.0, accelerator=None):
     """
     Compute the harmonization loss: cross entropy + pyramidal mse of standardized-cut heatmaps.
 
@@ -96,7 +96,7 @@ def harmonizer_loss(model, images, labels, clickme_maps,
 
     model.train()
        
-    # compute prediction
+    # # compute prediction
     images.requires_grad_()
     outputs = model(images)
 
@@ -104,7 +104,11 @@ def harmonizer_loss(model, images, labels, clickme_maps,
     correct_class_scores = outputs.gather(1, labels.view(-1, 1)).squeeze()
     device = images.device
     ones_tensor = torch.ones(correct_class_scores.shape).to(device) # scores is a tensor here, need to supply initial gradients of same tensor shape as scores.
-    correct_class_scores.backward(ones_tensor, retain_graph=True) # compute the gradients while retain the graph
+    # correct_class_scores.backward(gradient=ones_tensor, retain_graph=True) # compute the gradients
+    if accelerator:
+        accelerator.backward(correct_class_scores, gradient=ones_tensor, retain_graph=True)
+    else:
+        correct_class_scores.backward(gradient=ones_tensor, retain_graph=True) # compute the gradients
     
     # obtain saliency map
     grads = torch.abs(images.grad)
@@ -133,9 +137,9 @@ def harmonizer_loss(model, images, labels, clickme_maps,
     images.requires_grad_(False)
     images.grad.zero_() 
 
-    return harmonization_loss, cce_loss
+    return harmonization_loss, cce_loss, outputs
 
-def harmonization_eval(model, images, labels, clickme_maps, criterion):
+def harmonization_eval(model, images, labels, clickme_maps, criterion, accelerator=None):
     """
     Compute the harmonization loss: cross entropy + pyramidal mse of standardized-cut heatmaps.
 
@@ -166,7 +170,11 @@ def harmonization_eval(model, images, labels, clickme_maps, criterion):
     correct_class_scores = outputs.gather(1, labels.view(-1, 1)).squeeze()
     device = images.device
     ones_tensor = torch.ones(correct_class_scores.shape).to(device) # scores is a tensor here, need to supply initial gradients of same tensor shape as scores.
-    correct_class_scores.backward(ones_tensor, retain_graph=True) # compute the gradients 
+    # correct_class_scores.backward(gradient=ones_tensor, retain_graph=True) # compute the gradients
+    if accelerator:
+        accelerator.backward(correct_class_scores, gradient=ones_tensor, retain_graph=True)
+    else:
+        correct_class_scores.backward(gradient=ones_tensor, retain_graph=True) # compute the gradients
     
     # compute saliency maps
     grads = torch.abs(images.grad)
