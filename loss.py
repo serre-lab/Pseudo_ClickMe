@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from pyramid import pyramidal_representation
-from utils import compute_human_alignment
+from utils import compute_human_alignment, compute_image_gradient_norm
 
 def standardize_cut(heatmaps, axis=(2, 3), epsilon=1e-6):
     """
@@ -48,7 +48,6 @@ def mse(heatmaps_a, heatmaps_b):
     """
     return torch.mean(torch.square(heatmaps_a - heatmaps_b))
 
-
 def pyramidal_mse(true_heatmaps, predicted_heatmaps, nb_levels=5):
     """
     Compute mean squared error between two set heatmaps on a pyramidal representation.
@@ -69,6 +68,8 @@ def pyramidal_mse(true_heatmaps, predicted_heatmaps, nb_levels=5):
     
     # for i in range(nb_levels):
     #     print(mse(pyramid_y[i], pyramid_y_pred[i]))
+
+    # print(pyramid_y[0].grad_fn, pyramid_y_pred[0].grad_fn)
 
     loss = torch.mean(torch.stack(
         [mse(pyramid_y[i], pyramid_y_pred[i]) for i in range(nb_levels)]))
@@ -105,13 +106,17 @@ def harmonizer_loss(model, images, labels, clickme_maps,
     device = images.device
     ones_tensor = torch.ones(correct_class_scores.shape).to(device) # scores is a tensor here, need to supply initial gradients of same tensor shape as scores.
     # correct_class_scores.backward(gradient=ones_tensor, retain_graph=True) # compute the gradients
-    if accelerator:
-        accelerator.backward(correct_class_scores, gradient=ones_tensor, retain_graph=True)
-    else:
-        correct_class_scores.backward(gradient=ones_tensor, retain_graph=True) # compute the gradients
+    # if accelerator:
+    #     accelerator.backward(correct_class_scores, gradient=ones_tensor, retain_graph=True, create_graph=True)
+    # else:
+    #     correct_class_scores.backward(gradient=ones_tensor, retain_graph=True, create_graph=True) # compute the gradients and add nodes for the computational graph
     
+    # import ipdb; ipdb.set_trace()
+
     # obtain saliency map
-    grads = torch.abs(images.grad)
+    # grads = torch.abs(images.grad)
+    grads = torch.autograd.grad(outputs=correct_class_scores, inputs=images, grad_outputs=ones_tensor, retain_graph=True, create_graph=True, only_inputs=True)[0]
+    grads = torch.abs(grads)
     saliency_maps = torch.mean(grads, dim=1, keepdim=True) #  (N, 1, H, W)
     # saliency_maps, _ = torch.max(grads, dim=1, keepdim=True) # (N, C, H, W) -> (N, 1, H, W)
     
@@ -133,11 +138,21 @@ def harmonizer_loss(model, images, labels, clickme_maps,
 
     harmonization_loss = cce_loss + pyramidal_loss * lambda_harmonization # + weight_loss
     
+    # compute images L2 norm
+    images_grad = torch.autograd.grad(harmonization_loss, images, retain_graph=True, create_graph=False)[0]
+    images_grad_norm_hmn = compute_image_gradient_norm(images_grad)
+
+    images_grad = torch.autograd.grad(cce_loss, images, retain_graph=True, create_graph=False)[0]
+    images_grad_norm_cce = compute_image_gradient_norm(images_grad)
+
+    images_grad = torch.autograd.grad(pyramidal_loss, images, retain_graph=True, create_graph=False)[0]
+    images_grad_norm_pyramid = compute_image_gradient_norm(images_grad)
+
     # reset the gradients
     images.requires_grad_(False)
-    images.grad.zero_() 
+    # images.grad.zero_() 
 
-    return harmonization_loss, cce_loss, outputs
+    return harmonization_loss, pyramidal_loss, cce_loss, outputs, images_grad_norm_hmn, images_grad_norm_cce, images_grad_norm_pyramid
 
 def harmonization_eval(model, images, labels, clickme_maps, criterion, accelerator=None):
     """

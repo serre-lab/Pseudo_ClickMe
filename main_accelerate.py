@@ -85,14 +85,13 @@ def train(train_loader, model, criterion, optimizer, lr_scheduler, accelerator, 
         # import ipdb; ipdb.set_trace()
         
         # compute losses
-        hmn_loss, cce_loss, outputs = harmonizer_loss(model, images, targets, heatmaps, criterion, accelerator=accelerator)
-        
+        hmn_loss, pyramid_loss, cce_loss, outputs, images_grad_norm_hmn, images_grad_norm_cce, images_grad_norm_pyramid = harmonizer_loss(model, images, targets, heatmaps, criterion, accelerator=accelerator)
+        # accelerator.print(format(images_grad_norm_hmn, '.3e'), format(images_grad_norm_cce, '.3e'), format(images_grad_norm_pyramid, '.3e'))
+
         # log gradient norm
         optimizer.zero_grad()
-        pyramid_loss = hmn_loss - cce_loss
         accelerator.backward(pyramid_loss, retain_graph=True)
         pyramid_grad_norm = utils.compute_gradient_norm(model)
-        # accelerator.print(pyramid_loss, format(pyramid_grad_norm, '.6e'))
         
         optimizer.zero_grad()
         accelerator.backward(cce_loss, retain_graph=True)
@@ -115,6 +114,9 @@ def train(train_loader, model, criterion, optimizer, lr_scheduler, accelerator, 
                 "pyramid_grad_norm": pyramid_grad_norm,
                 "cce_grad_norm": cce_grad_norm,
                 "hmn_grad_norm": hmn_grad_norm,
+                "images_grad_norm_hmn_loss": images_grad_norm_hmn, 
+                "images_grad_norm_cce_loss": images_grad_norm_cce, 
+                "images_grad_norm_pyramid_loss": images_grad_norm_pyramid
             })
         
         # Log

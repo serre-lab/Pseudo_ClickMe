@@ -32,7 +32,7 @@ def gaussian_kernel(num_channels):
                            [4., 16., 24., 16., 4.],
                            [6., 24., 36., 24., 6.],
                            [4., 16., 24., 16., 4.],
-                           [1., 4., 6., 4., 1.]]) # 5 * 5 Gaussian Kernel
+                           [1., 4., 6., 4., 1.]], requires_grad=False) # 5 * 5 Gaussian Kernel
     kernel /= 256.0 # torch.sum(kernel)
     return kernel.repeat(num_channels, 1, 1, 1) # (C, output dim, H, W)
 
@@ -58,6 +58,7 @@ def pyramidal_representation(image, num_levels):
     for _ in range(num_levels):
         image = downsample(image, kernel)
         levels.append(image)
+    
     return levels
 
 if __name__ == '__main__':

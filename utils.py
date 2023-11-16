@@ -531,5 +531,37 @@ def compute_gradient_norm(model, norm_type=2):
     total_norm = total_norm ** (1. / norm_type)
     return total_norm
 
+def compute_image_gradient_norm(images_grad, norm_type=2):
+    # Compute the L2 norm for each image in the batch individually
+    individual_norms = torch.norm(images_grad.view(images_grad.shape[0], -1), p=norm_type, dim=1)
+
+    # Compute the average L2 norm for the batch
+    average_norm = torch.mean(individual_norms)
+
+    return average_norm
+
+# Gradient Flow
+import matplotlib.pyplot as plt
+def plot_grad_flow(named_parameters, filename):
+    ave_grads = []
+    layers = []
+    for n, p in named_parameters:
+#         p = p.detach().cpu()
+        if(p.requires_grad) and ("bias" not in n):
+            layers.append(n)
+            ave_grads.append(p.grad.abs().mean().cpu().numpy())
+#     plt.figure(figsize=(15, 15))
+    plt.plot(ave_grads, alpha=0.3, color="b")
+    plt.hlines(0, 0, len(ave_grads)+1, linewidth=1, color="k" )
+    plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
+    plt.xlim(xmin=0, xmax=len(ave_grads))
+#     plt.ylim(ymin=0, ymax=5)
+    plt.xlabel("Layers")
+    plt.ylabel("average gradient")
+    plt.title("Gradient flow")
+    plt.grid(True)
+    plt.savefig('../'+str(filename)+'.png')
+    plt.clf()
+
 
 
