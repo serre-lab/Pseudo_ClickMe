@@ -4,7 +4,7 @@ Terminal cmd:
     accelerate config
 - Train
     accelerate launch --main_process_port 29501 main_accelerate.py -dd '/media/data_cifs/projects/prj_pseudo_clickme/Dataset/full' -mn 'resnet50' -md "clickme" -ep 100 -bs 256 -pt True -wb True
-    accelerate launch main_accelerate.py -mn 'resnet50' -md  "clickme" -ep 10 -bs 8 -pt True
+    accelerate launch --main_process_port 29501 main_accelerate.py -mn 'resnet50' -md  "clickme" -ep 10 -bs 8 -pt True
     accelerate launch --main_process_port 29501 main_accelerate.py -mn 'resnet50' -md  "clickme" -ep 1 -bs 8 -pt True
 - Eval
     accelerate launch main_accelerate.py -dd '/media/data_cifs/projects/prj_pseudo_clickme/Dataset/full' -mn 'resnet50' -md "clickme" -bs 256 -ev True -rs True
@@ -76,47 +76,43 @@ def train(train_loader, model, criterion, optimizer, lr_scheduler, accelerator, 
     else:
         pbar = train_loader
 
+    pyramid_grad_norm, cce_grad_norm, hmn_grad_norm = None, None, None
     for batch_id, (images, heatmaps, targets) in enumerate(pbar):
         images, heatmaps, targets = images.to(device, non_blocking=True), heatmaps.to(device, non_blocking=True), targets.to(device, non_blocking=True)
-
-        # compute prediction output
-        # outputs = model(images)
-
-        # import ipdb; ipdb.set_trace()
         
         # compute losses
-        hmn_loss, pyramid_loss, cce_loss, outputs, images_grad_norm_hmn, images_grad_norm_cce, images_grad_norm_pyramid = harmonizer_loss(model, images, targets, heatmaps, criterion, accelerator=accelerator)
+        hmn_loss, pyramid_loss, cce_loss, outputs = harmonizer_loss(model, images, targets, heatmaps, criterion, accelerator=accelerator)
         # accelerator.print(format(images_grad_norm_hmn, '.3e'), format(images_grad_norm_cce, '.3e'), format(images_grad_norm_pyramid, '.3e'))
 
-        # log gradient norm
-        optimizer.zero_grad()
-        accelerator.backward(pyramid_loss, retain_graph=True)
-        pyramid_grad_norm = utils.compute_gradient_norm(model)
+        # # log gradient norm
+        # optimizer.zero_grad()
+        # accelerator.backward(pyramid_loss, retain_graph=True)
+        # pyramid_grad_norm = utils.compute_gradient_norm(model)
         
-        optimizer.zero_grad()
-        accelerator.backward(cce_loss, retain_graph=True)
-        cce_grad_norm = utils.compute_gradient_norm(model)
-        # accelerator.print(pyramid_loss, cce_loss, format(pyramid_grad_norm, '.6f'), cce_grad_norm)
-
+        # optimizer.zero_grad()
+        # accelerator.backward(cce_loss, retain_graph=True)
+        # cce_grad_norm = utils.compute_gradient_norm(model)
+        
         # Update 
         optimizer.zero_grad()
         accelerator.backward(hmn_loss)
-
+        
         hmn_grad_norm = utils.compute_gradient_norm(model)
-        # accelerator.print(format(hmn_grad_norm, '.6e'))
-
+  
         optimizer.step()
         lr_scheduler.step()
+
+        # accelerator.print(pyramid_loss, cce_loss, format(pyramid_grad_norm, '.6f'), format(cce_grad_norm, '.6f'), format(hmn_grad_norm, '.6f'))
 
         # log gradient norm
         if accelerator.is_main_process and args.wandb: # just update values on the main process
             wandb.log({
-                "pyramid_grad_norm": pyramid_grad_norm,
-                "cce_grad_norm": cce_grad_norm,
-                "hmn_grad_norm": hmn_grad_norm,
-                "images_grad_norm_hmn_loss": images_grad_norm_hmn, 
-                "images_grad_norm_cce_loss": images_grad_norm_cce, 
-                "images_grad_norm_pyramid_loss": images_grad_norm_pyramid
+                "pyramid_grad_norm": pyramid_grad_norm if pyramid_grad_norm else 0,
+                "cce_grad_norm": cce_grad_norm if cce_grad_norm else 0,
+                "hmn_grad_norm": hmn_grad_norm if hmn_grad_norm else 0,
+                # "images_grad_norm_hmn_loss": images_grad_norm_hmn, 
+                # "images_grad_norm_cce_loss": images_grad_norm_cce, 
+                # "images_grad_norm_pyramid_loss": images_grad_norm_pyramid
             })
         
         # Log
@@ -347,6 +343,12 @@ def run(args):
             wandb.finish()
 
 if __name__ == '__main__':
+    # os.environ["MASTER_ADDR"] = "localhost"
+    # os.environ["MASTER_PORT"] = "29501"
+    os.environ[
+        "TORCH_DISTRIBUTED_DEBUG"
+    ] = "DETAIL"  # set to DETAIL for runtime logging.
+    
     # create the command line parser
     parser = argparse.ArgumentParser('Harmonization PyTorch Scripts using Accelerate', add_help=False)
     parser.add_argument("-dd", "--data_dir", required = False, type = str, 
@@ -402,7 +404,7 @@ if __name__ == '__main__':
                         help="learning rate scheduler")
     parser.add_argument("-gm", "--gamma", required=False, type = float, default = 0.1,
                         help="scheduler parameters, which decides the change of learning rate ")
-    parser.add_argument("-wd", "--weight_decay", required=False, type = float, default = 1e-3,
+    parser.add_argument("-wd", "--weight_decay", required=False, type = float, default = 1e-4,
                         help="weight decay, regularization")
     parser.add_argument("-iv", "--interval", required=False, type = int, default = 2,
                         help="Step interval for printing logs")
